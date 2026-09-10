@@ -35,6 +35,7 @@ import { useAppStore } from "../store/app-store";
 const SettingsDialog = lazy(() => import("../features/settings/SettingsDialog"));
 const EditorWorkspace = lazy(() => import("../features/editor/EditorWorkspace"));
 const NoteGraphView = lazy(() => import("../features/graph/NoteGraphView"));
+const AiChatPanel = lazy(() => import("../features/ai/AiChatPanel"));
 
 function EmptyState() {
   const openWorkspace = useAppStore((state) => state.openWorkspace);
@@ -182,6 +183,8 @@ function WorkspaceLayout({
         >
           {libraryPanelMode === "graph" ? (
             <NoteGraphView />
+          ) : libraryPanelMode === "ai" ? (
+            <AiChatPanel className="min-h-0 min-w-0 max-[760px]:min-h-[calc(100vh-48px)]" />
           ) : (
             <EditorWorkspace
               className="max-[760px]:grid max-[760px]:min-h-[calc(100vh-48px)]"

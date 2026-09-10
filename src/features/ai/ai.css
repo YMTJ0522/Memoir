@@ -1,0 +1,451 @@
+/* AI chat panel — chat bubbles styled after Doubao-style assistants. */
+
+.ai-chat-panel {
+  position: relative;
+}
+
+/* note picker in the context bar */
+.ai-note-picker .memoir-select-field {
+  height: 28px;
+  min-height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12px;
+}
+
+.ai-setup-card {
+  padding: 28px 24px;
+  border: 1px solid var(--memoir-border);
+  border-radius: 14px;
+  background: var(--memoir-elevated);
+}
+
+/* session rail (left column) */
+
+.ai-session-rail {
+  background: var(--memoir-panel);
+}
+
+.ai-session-list {
+  scrollbar-width: thin;
+}
+
+.ai-session-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+  transition: background var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.ai-session-item:hover {
+  background: color-mix(in srgb, var(--memoir-muted) 10%, transparent);
+}
+
+.ai-session-item.is-active {
+  background: color-mix(in srgb, var(--memoir-accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--memoir-accent);
+}
+
+.ai-session-item-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 6px 6px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--memoir-text);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.ai-session-item.is-active .ai-session-item-main {
+  font-weight: 600;
+}
+
+.ai-session-item-count {
+  flex-shrink: 0;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--memoir-muted);
+  background: color-mix(in srgb, var(--memoir-muted) 14%, transparent);
+}
+
+.ai-session-item.is-active .ai-session-item-count {
+  color: var(--memoir-accent);
+  background: color-mix(in srgb, var(--memoir-accent) 14%, transparent);
+}
+
+.ai-session-item-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  border-radius: 6px;
+  color: var(--memoir-muted);
+  opacity: 0;
+  transition: color var(--memoir-motion-fast) var(--memoir-ease),
+    background var(--memoir-motion-fast) var(--memoir-ease),
+    opacity var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.ai-session-item:hover .ai-session-item-delete,
+.ai-session-item-delete:focus-visible {
+  opacity: 1;
+}
+
+.ai-session-item-delete:hover {
+  color: var(--memoir-danger);
+  background: color-mix(in srgb, var(--memoir-danger) 12%, transparent);
+}
+
+/* collapsible reasoning (thinking) block */
+
+.ai-reasoning-block {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px dashed var(--memoir-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--memoir-panel) 70%, transparent);
+}
+
+.ai-reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--memoir-muted);
+  transition: color var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.ai-reasoning-toggle:hover {
+  color: var(--memoir-text);
+}
+
+.ai-reasoning-body {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: var(--memoir-mono-font);
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--memoir-muted);
+  background: var(--memoir-canvas);
+}
+
+/* quick command chips */
+
+.ai-quick-commands {
+  scrollbar-width: thin;
+}
+
+.ai-quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--memoir-border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--memoir-text);
+  background: var(--memoir-elevated);
+  transition: border-color var(--memoir-motion-fast) var(--memoir-ease),
+    background var(--memoir-motion-fast) var(--memoir-ease),
+    color var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.ai-quick-chip:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--memoir-accent) 55%, var(--memoir-border));
+  background: color-mix(in srgb, var(--memoir-accent) 10%, var(--memoir-elevated));
+  color: var(--memoir-accent);
+}
+
+.ai-quick-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* messages */
+
+.ai-chat-messages {
+  background: var(--memoir-canvas);
+}
+
+.ai-bubble-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.ai-bubble-row.is-user {
+  align-items: flex-end;
+}
+
+.ai-bubble {
+  max-width: min(86%, 640px);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.ai-bubble.is-user {
+  background: var(--memoir-accent);
+  color: var(--memoir-accent-contrast);
+  border-bottom-right-radius: 4px;
+}
+
+.ai-bubble.is-assistant {
+  background: var(--memoir-elevated);
+  border: 1px solid var(--memoir-border);
+  border-bottom-left-radius: 4px;
+}
+
+/* assistant markdown content */
+
+.ai-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.ai-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.ai-markdown h1,
+.ai-markdown h2,
+.ai-markdown h3,
+.ai-markdown h4,
+.ai-markdown h5,
+.ai-markdown h6 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 14px 0 6px;
+  color: var(--memoir-text);
+}
+
+.ai-markdown h1 {
+  font-size: 16px;
+}
+
+.ai-markdown h2 {
+  font-size: 15px;
+}
+
+.ai-markdown p {
+  margin: 6px 0;
+}
+
+.ai-markdown ul,
+.ai-markdown ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.ai-markdown li {
+  margin: 3px 0;
+}
+
+.ai-markdown blockquote {
+  margin: 8px 0;
+  padding: 2px 12px;
+  border-left: 3px solid var(--memoir-border);
+  color: var(--memoir-muted);
+}
+
+.ai-markdown code {
+  font-family: var(--memoir-mono-font);
+  font-size: 12.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--memoir-muted) 14%, transparent);
+}
+
+.ai-markdown pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  overflow-x: auto;
+  background: var(--memoir-panel);
+  border: 1px solid var(--memoir-border);
+}
+
+.ai-markdown pre code {
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.ai-markdown a {
+  color: var(--memoir-accent);
+  text-decoration: underline;
+}
+
+.ai-bubble.is-user .ai-markdown a {
+  color: inherit;
+}
+
+.ai-markdown hr {
+  border: none;
+  border-top: 1px solid var(--memoir-border);
+  margin: 10px 0;
+}
+
+.ai-markdown .ai-task.is-done {
+  text-decoration: line-through;
+  color: var(--memoir-muted);
+}
+
+/* bubble action bar */
+
+.ai-bubble-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--memoir-border);
+}
+
+.ai-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--memoir-muted);
+  transition: background var(--memoir-motion-fast) var(--memoir-ease),
+    color var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.ai-action-button:hover {
+  background: color-mix(in srgb, var(--memoir-muted) 12%, transparent);
+  color: var(--memoir-text);
+}
+
+/* loading dots */
+
+.ai-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+}
+
+.ai-typing i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--memoir-muted);
+  animation: ai-typing-bounce 1.1s infinite ease-in-out;
+}
+
+.ai-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.ai-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes ai-typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* error state */
+
+.ai-error {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--memoir-danger);
+}
+
+.ai-error p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.ai-error-details {
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--memoir-muted);
+  overflow-wrap: anywhere;
+}
+
+.ai-retry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--memoir-border);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--memoir-text);
+  transition: background var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.ai-retry-button:hover {
+  background: color-mix(in srgb, var(--memoir-muted) 10%, transparent);
+}
+
+/* composer */
+
+.ai-composer {
+  background: var(--memoir-canvas);
+}
+
+.ai-composer-input {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--memoir-border);
+  border-radius: 12px;
+  background: var(--memoir-elevated);
+  color: var(--memoir-text);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.ai-composer-input::placeholder {
+  color: var(--memoir-muted);
+}
+
+.ai-composer-input:focus {
+  border-color: color-mix(in srgb, var(--memoir-accent) 55%, var(--memoir-border));
+}
+
+.ai-composer-input:disabled {
+  opacity: 0.6;
+}

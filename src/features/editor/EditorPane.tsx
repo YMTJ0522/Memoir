@@ -19,12 +19,13 @@ import { bindLiveEditor } from "../../domain/live-editor";
 import { fencedCodeBlockHighlighter, fencedCodeLanguages } from "./code-languages";
 import { CodeMirrorHost, type CodeMirrorHostHandle } from "./code-mirror-host";
 import { clamp } from "./scroll-sync";
-import { collectClipboardImages, padMarkdownBlock } from "../../domain/attachments";
+import { collectClipboardAttachmentFiles, padMarkdownBlock } from "../../domain/attachments";
 import { writeClipboardText } from "./clipboard";
 import type { EditorMenuTarget } from "./EditorContextMenu";
 import type { AppLocale, AppSettings } from "../../domain/settings";
 import { useI18n } from "../../i18n/react";
 import { createMemoirSearchPanel, searchPanelLabels } from "./search-panel";
+import { toolbarKeymap } from "./toolbar-keymap";
 import { noteStats, parseNote } from "../library/note-utils";
 import { cn, Tag } from "../../components/ui";
 import {
@@ -33,6 +34,7 @@ import {
   wikiSourcePath,
   type WikiCatalogNote,
 } from "./wiki-links";
+import { codeLangCompleteExtensions } from "./code-lang-complete";
 
 export { EDITOR_SNAPSHOT_DEBOUNCE_MS } from "./code-mirror-host";
 
@@ -196,13 +198,14 @@ function createEditorExtensions(
     wikiNoteCatalog.of(wiki?.catalog ?? []),
     wikiSourcePath.of(wiki?.sourcePath ?? ""),
     ...wikiLinkExtensions(wiki?.onOpenNote),
+    ...codeLangCompleteExtensions(),
     ...(settings.lineWrapping ? [EditorView.lineWrapping] : []),
     ...(settings.lineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []),
     search({
       top: true,
       createPanel: createMemoirSearchPanel(labels),
     }),
-    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+    keymap.of([...toolbarKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
     EditorView.domEventHandlers({
       mousedown(event) {
         return ignorePointerUntil ? ignoreEditorPointer(event, ignorePointerUntil) : false;
@@ -215,7 +218,7 @@ function createEditorExtensions(
       },
       paste(event, view) {
         if (!onPasteImages) return false;
-        const files = collectClipboardImages(event.clipboardData);
+        const files = collectClipboardAttachmentFiles(event.clipboardData);
         if (!files.length) return false;
         event.preventDefault();
         const { from, to } = view.state.selection.main;
@@ -226,7 +229,7 @@ function createEditorExtensions(
       },
       drop(event, view) {
         if (!onPasteImages) return false;
-        const files = collectClipboardImages(event.dataTransfer);
+        const files = collectClipboardAttachmentFiles(event.dataTransfer);
         if (!files.length) return false;
         event.preventDefault();
         event.stopPropagation();
@@ -344,6 +347,8 @@ export interface EditorHandle {
   scrollToLine: (line: number, offset?: number) => void;
   insertSnippet: (before: string, after?: string, placeholder?: string) => void;
   insertText: (text: string) => void;
+  /** Replaces the current selection with plain text (no markdown block padding). */
+  replaceSelection: (text: string) => void;
   insertTextAtCoords: (x: number, y: number, text: string) => void;
   insertRaw: (text: string) => void;
   undo: () => void;
@@ -369,6 +374,8 @@ interface EditorPaneProps {
   wikiCatalog?: WikiCatalogNote[];
   sourcePath?: string;
   onOpenNote?: (path: string) => void;
+  /** Notified whenever the underlying CodeMirror view is created/replaced. */
+  onEditorView?: (view: EditorView | null) => void;
 }
 
 export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function EditorPane(
@@ -385,6 +392,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
     wikiCatalog = EMPTY_WIKI_CATALOG,
     sourcePath = "",
     onOpenNote,
+    onEditorView,
   },
   forwardedRef,
 ) {
@@ -457,6 +465,12 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
         if (!view || !text) return;
         const selection = view.state.selection.main;
         insertMarkdownBlock(view, selection.from, selection.to, text);
+      },
+      replaceSelection: (text) => {
+        const view = hostRef.current?.getView();
+        if (!view || !text) return;
+        const selection = view.state.selection.main;
+        insertAt(view, selection.from, selection.to, text);
       },
       insertTextAtCoords: (x, y, text) => {
         const view = hostRef.current?.getView();
@@ -543,12 +557,13 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           view.scrollDOM.addEventListener("scroll", handleScroll, { passive: true });
           detachScrollRef.current = () => view.scrollDOM.removeEventListener("scroll", handleScroll);
           handleScroll();
+          onEditorView?.(view);
         }}
         ref={hostRef}
       />
       {showDrop && (
         <div className="editor-drop-overlay" role="status">
-          {t("editor.dropImages")}
+          {t("editor.dropAttachments")}
         </div>
       )}
       <footer className="editor-statusbar absolute inset-x-0 bottom-0 flex h-7 items-center gap-3 border-t border-border bg-elevated/80 px-4 text-[9px] text-muted backdrop-blur-md">

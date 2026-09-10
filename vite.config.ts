@@ -25,6 +25,9 @@ export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
   define: {
     __APP_VERSION__: JSON.stringify(cargoPackageVersion()),
+    // Buffer is polyfilled at runtime in `src/platform/buffer-stub.ts`
+    // (injected before React boots). A `define` entry would break the
+    // production build — esbuild rejects non-literal define values.
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

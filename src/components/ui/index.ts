@@ -6,6 +6,7 @@ export { Dialog } from "./Dialog";
 export { IconButton } from "./IconButton";
 export { Combobox, type ComboboxOption } from "./Combobox";
 export { Input } from "./Input";
+export { Kbd } from "./Tooltip";
 export { SegmentedControl } from "./SegmentedControl";
 export { Select } from "./Select";
 export { StatusNotice } from "./StatusNotice";

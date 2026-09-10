@@ -77,8 +77,138 @@
   border-radius: 6px;
 }
 
+.markdown-toolbar .toolbar-group-divider {
+  display: block;
+  width: 1px;
+  height: 16px;
+  flex: none;
+  margin-inline: 4px;
+  background: color-mix(in srgb, var(--memoir-border) 82%, transparent);
+}
+
 .markdown-toolbar .toolbar-divider {
   border-left: 1px solid color-mix(in srgb, var(--memoir-border) 82%, transparent);
+}
+
+/* Dropdown buttons inside the markdown toolbar (heading / more blocks). */
+.toolbar-dropdown-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.toolbar-dropdown-chevron {
+  width: 10px;
+  height: 10px;
+  color: var(--memoir-muted);
+}
+
+/* Table grid picker (8×8) portaled below the table toolbar button. */
+.toolbar-grid-picker {
+  position: fixed;
+  z-index: 60;
+  padding: 8px;
+}
+
+.toolbar-grid {
+  display: grid;
+  gap: 3px;
+}
+
+.toolbar-grid-cell {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--memoir-border) 88%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  transition: background-color 80ms var(--memoir-ease);
+}
+
+.toolbar-grid-cell:hover {
+  border-color: color-mix(in srgb, var(--memoir-accent) 55%, transparent);
+}
+
+.toolbar-grid-cell.is-active {
+  background: color-mix(in srgb, var(--memoir-accent) 82%, transparent);
+  border-color: color-mix(in srgb, var(--memoir-accent) 82%, transparent);
+}
+
+.toolbar-grid-label {
+  margin: 8px 2px 0;
+  color: var(--memoir-muted);
+  font-size: 10.5px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar-dropdown-menu {
+  position: fixed;
+  z-index: 60;
+  padding: 4px;
+  min-width: 0;
+  /* inkstone parity: shrink-wrap the rows; the inline maxWidth caps it. */
+  width: max-content;
+  box-sizing: border-box;
+  max-height: 60vh;
+  overflow-y: auto;
+  touch-action: manipulation;
+}
+
+/* Toolbar menus hug their content like inkstone: rows are single-line flex
+   (grid auto-placement used to wrap the trailing shortcut hint onto its own
+   line) and measure themselves (min-width:100% keeps hover backgrounds
+   full-width), so no menu stretches past its longest row. */
+.toolbar-dropdown-menu .memoir-context-menu-item {
+  display: flex;
+  align-items: center;
+  width: auto;
+  min-width: 100%;
+}
+
+/* Leading icon column keeps its slot; label flexes, combo hugs the end. */
+.toolbar-dropdown-menu .memoir-context-menu-icon {
+  flex: none;
+  margin-right: 8px;
+}
+
+.toolbar-dropdown-menu .memoir-context-menu-item > span:not(.memoir-context-menu-icon) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.toolbar-menu-combo {
+  flex: none;
+  margin-left: auto;
+  padding-left: 16px;
+}
+
+.toolbar-menu-combo kbd {
+  border-color: color-mix(in srgb, var(--memoir-border) 88%, transparent);
+  background: color-mix(in srgb, var(--memoir-panel) 72%, transparent);
+}
+
+.toolbar-dropdown-menu .memoir-context-menu-separator {
+  grid-column: 1 / -1;
+}
+
+/* Note picker rows (NoteSyntaxDialogs) reuse the wiki-complete look. */
+.memoir-note-picker-option {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+}
+
+.memoir-note-picker-option.is-active,
+.memoir-note-picker-option:hover {
+  background: color-mix(in srgb, var(--memoir-accent-soft) 80%, transparent);
+}
+
+.memoir-note-picker-option.is-active {
+  outline: none;
 }
 
 .editor-pane {

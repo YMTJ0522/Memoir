@@ -1,27 +1,37 @@
 import {
+  Blocks,
   Bold,
-  BookOpen,
   Braces,
+  Code,
   ExternalLink,
   FileDown,
-  Heading2,
+  FileUp,
+  Heading,
+  Highlighter,
+  History,
   Image,
   Italic,
   LayoutPanelLeft,
-  Link,
+  BookOpen,
   Link2,
   List,
   ListOrdered,
+  ListTodo,
   Minus,
+  Network,
   Quote,
   Save,
+  Sigma,
+  Sparkles,
   SplitSquareHorizontal,
   Star,
   Strikethrough,
+  Table,
   Trash2,
+  WandSparkles,
 } from "lucide-react";
 import { forwardRef, lazy, Suspense, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { IconButton, cn } from "../../components/ui";
+import { IconButton, Tooltip, cn } from "../../components/ui";
 import { fileDropTargetFromPoint, watchNativeFileDrop } from "../../platform/file-drop";
 import { isTauriRuntime } from "../../platform/runtime";
 import {
@@ -31,6 +41,8 @@ import {
 } from "../../domain/layout";
 import { LayoutResizeHandle } from "../layout/LayoutResizeHandle";
 import { useAppStore } from "../../store/app-store";
+import { getGateways } from "../../gateways";
+import { isAiConfigured } from "../../domain/settings";
 import { useI18n } from "../../i18n/react";
 import { parseNote } from "../library/note-utils";
 import { handleWindowDragMouseDown } from "../window/window-drag";
@@ -39,7 +51,38 @@ import { mapGatewayError } from "../../domain/errors";
 import { revealWorkspaceItem } from "../workspace/workspace-utils";
 import { readClipboardImageFiles, readClipboardText } from "./clipboard";
 import { EditorContextMenu, type EditorMenuTarget } from "./EditorContextMenu";
+import {
+  NotePickerDialog,
+  RemoteImageDialog,
+  type NoteSyntaxDialogState,
+} from "./NoteSyntaxDialogs";
 import type { EditorHandle } from "./EditorPane";
+import { ToolbarDropdownButton } from "./ToolbarDropdownButton";
+import { ToolbarMenuItem } from "./ToolbarMenuItem";
+import { TableGridPicker } from "./TableGridPicker";
+import type { EditorView } from "@codemirror/view";
+import {
+  toolbarAdvancedCodeBlock,
+  toolbarBlockId,
+  toolbarBlockPrefix,
+  toolbarCallout,
+  toolbarCodeBlock,
+  toolbarDetails,
+  toolbarFootnote,
+  toolbarFrontMatter,
+  toolbarHeading,
+  toolbarHorizontalRule,
+  toolbarImage,
+  toolbarInline,
+  toolbarInlineCode,
+  toolbarLink,
+  toolbarMathBlock,
+  toolbarMermaid,
+  toolbarTable,
+  toolbarTabs,
+  toolbarTag,
+  toolbarWrap,
+} from "./toolbar-commands";
 import {
   bodySourceLineOffset,
   collectPreviewAnchors,
@@ -49,8 +92,10 @@ import {
   syncViewportOffset,
   type ScrollAnchor,
 } from "./scroll-sync";
-import { exportNotePdf } from "../export/export-note-pdf";
+import { exportNote } from "../export/export-note";
+import type { ExportFormat } from "../../gateways/contracts";
 import { useNoteGraph } from "../graph/useNoteGraph";
+import { VersionsPanel } from "./VersionsPanel";
 
 const EditorPane = lazy(() => import("./EditorPane"));
 const PreviewPane = lazy(() => import("../preview/PreviewPane"));
@@ -118,12 +163,22 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
   const savePastedImages = useAppStore((state) => state.savePastedImages);
   const importDroppedImages = useAppStore((state) => state.importDroppedImages);
   const importAttachments = useAppStore((state) => state.importAttachments);
+  const importArticles = useAppStore((state) => state.importArticles);
   const { t } = useI18n();
   const splitRef = useRef<HTMLDivElement>(null);
   const [splitWidth, setSplitWidth] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [nativeDropActive, setNativeDropActive] = useState(false);
   const [editorMenu, setEditorMenu] = useState<EditorMenuTarget | null>(null);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  // Which toolbar dropdown (by key) currently has its menu open; used to
+  // suppress the trigger tooltip while its menu is visible (inkstone parity).
+  const [openDropdownKey, setOpenDropdownKey] = useState<string | null>(null);
+  // AI selected-text operation is in flight (spinner on the toolbar entry).
+  const [aiBusy, setAiBusy] = useState(false);
+  // Pending note-syntax picker behind the "note syntax" menu: choose a note
+  // (or paste a remote image URL) instead of inserting an empty token.
+  const [noteSyntaxDialog, setNoteSyntaxDialog] = useState<NoteSyntaxDialogState>(null);
   const { graph } = useNoteGraph();
   const untitled = t("editor.untitledFallback");
   const activeNote = notes.find((note) => note.relativePath === activePath) || null;
@@ -304,6 +359,7 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
       insertSnippet: (before, after, placeholder) =>
         editorRef.current?.insertSnippet(before, after, placeholder),
       insertText: (text) => editorRef.current?.insertText(text),
+      replaceSelection: (text) => editorRef.current?.replaceSelection(text),
       insertTextAtCoords: (x, y, text) => editorRef.current?.insertTextAtCoords(x, y, text),
       insertRaw: (text) => editorRef.current?.insertRaw(text),
       undo: () => editorRef.current?.undo(),
@@ -320,7 +376,18 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
     setEditorMenu(target);
   }, []);
 
+  const ensureEditorMounted = useCallback(async () => {
+    // In preview mode the editor is not mounted, so inserts would silently
+    // do nothing. Switch to split view first so the markdown lands visibly.
+    if (viewModeRef.current === "preview") {
+      setViewMode("split");
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    }
+  }, [setViewMode]);
+
   const pasteIntoEditor = useCallback(async () => {
+    await ensureEditorMounted();
     const files = await readClipboardImageFiles();
     if (files.length) {
       const markdown = await savePastedImages(files);
@@ -329,44 +396,263 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
     }
     const text = await readClipboardText();
     if (text) editorRef.current?.insertRaw(text);
-  }, [savePastedImages]);
+  }, [ensureEditorMounted, savePastedImages]);
 
-  const insertSnippet = useCallback(
-    (before: string, after = "", placeholder = "") => {
-      editorRef.current?.insertSnippet(before, after, placeholder);
+  const exportActiveNote = useCallback(
+    async (format: ExportFormat) => {
+      if (!activePath || isExporting) return;
+      setIsExporting(true);
+      try {
+        await exportNote(activePath, format);
+      } finally {
+        setIsExporting(false);
+      }
     },
-    [],
+    [activePath, isExporting],
   );
 
-  const exportActivePdf = useCallback(async () => {
-    if (!activePath || isExporting) return;
-    setIsExporting(true);
-    try {
-      await exportNotePdf(activePath);
-    } finally {
-      setIsExporting(false);
-    }
-  }, [activePath, isExporting]);
-
   const insertImportedImages = useCallback(async () => {
+    await ensureEditorMounted();
     const imported = await importAttachments();
     const markdown = markdownForAttachments(useAppStore.getState().activePath, imported);
     if (markdown) editorRef.current?.insertText(markdown);
-  }, [importAttachments]);
+  }, [ensureEditorMounted, importAttachments]);
 
-  const toolbar = [
-    { label: t("toolbar.heading2"), icon: Heading2, action: () => insertSnippet("## ", "", t("toolbar.placeholderHeading")) },
-    { label: t("toolbar.bold"), icon: Bold, action: () => insertSnippet("**", "**", t("toolbar.placeholderText")), divider: true },
-    { label: t("toolbar.italic"), icon: Italic, action: () => insertSnippet("_", "_", t("toolbar.placeholderText")) },
-    { label: t("toolbar.strikethrough"), icon: Strikethrough, action: () => insertSnippet("~~", "~~", t("toolbar.placeholderText")) },
-    { label: t("toolbar.link"), icon: Link, action: () => insertSnippet("[", "](https://)", t("toolbar.placeholderLink")) },
-    { label: t("toolbar.wikiLink"), icon: Link2, action: () => insertSnippet("[[", "]]", t("toolbar.placeholderWikiLink")), divider: true },
-    { label: t("toolbar.image"), icon: Image, action: () => void insertImportedImages() },
-    { label: t("toolbar.quote"), icon: Quote, action: () => insertSnippet("> ", "", t("toolbar.placeholderQuote")), divider: true },
-    { label: t("toolbar.bulletList"), icon: List, action: () => insertSnippet("- ", "", t("toolbar.placeholderItem")) },
-    { label: t("toolbar.orderedList"), icon: ListOrdered, action: () => insertSnippet("1. ", "", t("toolbar.placeholderItem")) },
-    { label: t("toolbar.code"), icon: Braces, action: () => insertSnippet("`", "`", "code"), divider: true },
-    { label: t("toolbar.rule"), icon: Minus, action: () => insertSnippet("\n---\n") },
+  // Toolbar actions run in the live CodeMirror view (undoable single steps).
+  // The editor ref callback hands us the view whenever it mounts/changes.
+  const editorViewRef = useRef<EditorView | null>(null);
+  const handleEditorView = useCallback((view: EditorView | null) => {
+    editorViewRef.current = view;
+  }, []);
+
+  const withView = useCallback(
+    (run: (view: EditorView) => void) => {
+      const view = editorViewRef.current;
+      if (!view) {
+        void ensureEditorMounted().then(() => {
+          const next = editorViewRef.current;
+          if (next) run(next);
+        });
+        return;
+      }
+      run(view);
+    },
+    [ensureEditorMounted],
+  );
+
+  const runInline = useCallback(
+    (format: Parameters<typeof toolbarInline>[1]) => withView((view) => toolbarInline(view, format)),
+    [withView],
+  );
+  const runBlockPrefix = useCallback(
+    (kind: Parameters<typeof toolbarBlockPrefix>[1]) =>
+      withView((view) => toolbarBlockPrefix(view, kind)),
+    [withView],
+  );
+  const runHeading = useCallback(
+    (level: 1 | 2 | 3 | 4 | 5 | 6) => withView((view) => toolbarHeading(view, level)),
+    [withView],
+  );
+  const runWrap = useCallback(
+    (open: string, close?: string) => withView((view) => toolbarWrap(view, open, close)),
+    [withView],
+  );
+  const runInlineCode = useCallback(() => withView((view) => toolbarInlineCode(view)), [withView]);
+  const runLink = useCallback(() => withView((view) => toolbarLink(view)), [withView]);
+  const runTag = useCallback(() => withView((view) => toolbarTag(view)), [withView]);
+  const runBlockId = useCallback(() => withView((view) => toolbarBlockId(view)), [withView]);
+  const runFootnote = useCallback(() => withView((view) => toolbarFootnote(view)), [withView]);
+  const runCallout = useCallback(() => withView((view) => toolbarCallout(view)), [withView]);
+  const runDetails = useCallback(() => withView((view) => toolbarDetails(view)), [withView]);
+  const runMermaid = useCallback(() => withView((view) => toolbarMermaid(view)), [withView]);
+  const runCodeBlock = useCallback(() => withView((view) => toolbarCodeBlock(view)), [withView]);
+  const runAdvancedCodeBlock = useCallback(
+    () => withView((view) => toolbarAdvancedCodeBlock(view)),
+    [withView],
+  );
+  const runTable = useCallback(
+    (rows = 1, cols = 3) =>
+      withView((view) => toolbarTable(view, t("toolbar.tableHeaderRow"), rows, cols)),
+    [t, withView],
+  );
+  const runHorizontalRule = useCallback(
+    () => withView((view) => toolbarHorizontalRule(view)),
+    [withView],
+  );
+  const runMathBlock = useCallback(() => withView((view) => toolbarMathBlock(view)), [withView]);
+  const runFrontMatter = useCallback(() => withView((view) => toolbarFrontMatter(view)), [withView]);
+
+  // The "note syntax" picker inserts ready-made tokens at the live cursor
+  // (via insertRaw so wiki markup is not re-wrapped), then refocuses.
+  const insertNoteSyntaxToken = useCallback(
+    (token: string) => {
+      withView((view) => {
+        view.dispatch({
+          changes: { from: view.state.selection.main.from, to: view.state.selection.main.to, insert: token },
+          selection: { anchor: view.state.selection.main.from + token.length },
+          scrollIntoView: true,
+          userEvent: "input.toolbar",
+        });
+        view.focus();
+      });
+    },
+    [withView],
+  );
+  const insertRemoteImage = useCallback(
+    (url: string) => withView((view) => toolbarImage(view, url)),
+    [withView],
+  );
+  const runTabs = useCallback(
+    () => withView((view) => toolbarTabs(view, t("toolbar.tab1"), t("toolbar.tab2"))),
+    [t, withView],
+  );
+
+  // AI assisted editing: run an operation on the current selection and
+  // replace it with the streamed result.
+  const runAiOnSelection = useCallback(
+    async (kind: "expand" | "polish" | "summarize" | "translate") => {
+      if (aiBusy) return;
+      if (!isAiConfigured(useAppStore.getState().settings.ai)) {
+        useAppStore.setState({
+          error: t("ai.setupTitle"),
+        });
+        return;
+      }
+      const selected = editorRef.current?.getSelectedText() ?? "";
+      if (!selected.trim()) {
+        useAppStore.setState({
+          error: t("editor.aiSelectHint"),
+        });
+        return;
+      }
+      await ensureEditorMounted();
+      const latestSelected = editorRef.current?.getSelectedText() ?? "";
+      if (!latestSelected.trim()) {
+        useAppStore.setState({
+          error: t("editor.aiSelectHint"),
+        });
+        return;
+      }
+      setAiBusy(true);
+      try {
+        const prompts: Record<string, string> = {
+          expand: `请扩写以下内容，使其更详细、更丰富，保持原意，直接输出扩写结果（不要任何解释）：\n\n${latestSelected}`,
+          polish: `请润色以下内容，使其更通顺、专业，保留原意，直接输出润色结果（不要任何解释）：\n\n${latestSelected}`,
+          summarize: `请用简洁的语言总结以下内容要点，直接输出总结结果（不要任何解释）：\n\n${latestSelected}`,
+          translate: `请将以下内容翻译成英文，保留 Markdown 格式，直接输出翻译结果（不要任何解释）：\n\n${latestSelected}`,
+        };
+        const system = `你是用户的 AI 写作助手。请始终使用简体中文回复（翻译任务除外），语气自然专业。直接输出结果，不要任何解释或前缀。`;
+        const reply = await getGateways().ai.chatCompletionStream(
+          {
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: prompts[kind] },
+            ],
+          },
+          `req-editor-${Date.now()}`,
+          () => {
+            /* progress is not streamed into the editor; we await the final result */
+          },
+          () => {
+            /* reasoning pieces are not surfaced in the inline toolbar */
+          },
+        );
+        const result = reply.content.trim();
+        if (result) {
+          editorRef.current?.replaceSelection(result);
+        }
+      } catch (error) {
+        useAppStore.setState({
+          error: t("ai.errors.chat", {
+            message: mapGatewayError(error).message,
+          }),
+        });
+      } finally {
+        setAiBusy(false);
+      }
+    },
+    [aiBusy, mapGatewayError, t],
+  );
+
+  type ToolbarEntry =
+    | { kind: "divider"; key: string }
+    | {
+        kind: "button";
+        key: string;
+        label: string;
+        combo?: string;
+        icon: typeof Bold;
+        action: () => void;
+      }
+    | {
+        kind: "table";
+        key: string;
+        label: string;
+        icon: typeof Bold;
+      }
+    | {
+        kind: "dropdown";
+        key: string;
+        label: string;
+        icon: typeof Bold;
+        menu: "heading" | "inline" | "note" | "block" | "ai";
+        width: number;
+      };
+
+  const toolbar: ToolbarEntry[] = [
+    // Group 1: heading dropdown.
+    {
+      kind: "dropdown",
+      key: "heading",
+      label: t("toolbar.heading"),
+      icon: Heading,
+      menu: "heading",
+      width: 168,
+    },
+    { kind: "divider", key: "d1" },
+    // Group 2: inline styles.
+    { kind: "button", key: "bold", label: t("toolbar.bold"), combo: "mod+b", icon: Bold, action: () => runInline("bold") },
+    { kind: "button", key: "italic", label: t("toolbar.italic"), combo: "mod+i", icon: Italic, action: () => runInline("italic") },
+    { kind: "button", key: "strikethrough", label: t("toolbar.strikethrough"), combo: "mod+shift+x", icon: Strikethrough, action: () => runInline("strikethrough") },
+    { kind: "button", key: "code", label: t("toolbar.code"), combo: "mod+e", icon: Code, action: runInlineCode },
+    { kind: "dropdown", key: "moreInline", label: t("toolbar.moreInlineStyles"), icon: Highlighter, menu: "inline", width: 184 },
+    { kind: "divider", key: "d2" },
+    // Group 3: lists.
+    { kind: "button", key: "bullet", label: t("toolbar.bulletList"), combo: "mod+shift+8", icon: List, action: () => runBlockPrefix("bullet") },
+    { kind: "button", key: "ordered", label: t("toolbar.orderedList"), combo: "mod+shift+7", icon: ListOrdered, action: () => runBlockPrefix("ordered") },
+    { kind: "button", key: "task", label: t("toolbar.taskList"), combo: "mod+shift+9", icon: ListTodo, action: () => runBlockPrefix("task") },
+    { kind: "button", key: "quote", label: t("toolbar.quote"), combo: "mod+shift+.", icon: Quote, action: () => runBlockPrefix("quote") },
+    { kind: "divider", key: "d3" },
+    // Group 4: links & note syntax.
+    { kind: "button", key: "link", label: t("toolbar.link"), icon: Link2, action: runLink },
+    { kind: "button", key: "image", label: t("toolbar.image"), icon: Image, action: () => void insertImportedImages() },
+    { kind: "dropdown", key: "noteSyntax", label: t("toolbar.noteSyntax"), icon: Network, menu: "note", width: 184 },
+    { kind: "divider", key: "d4" },
+    // Group 5: blocks.
+    { kind: "button", key: "codeBlock", label: t("toolbar.codeBlock"), icon: Braces, action: runCodeBlock },
+    { kind: "table", key: "table", label: t("toolbar.table"), icon: Table },
+    { kind: "button", key: "math", label: t("toolbar.math"), icon: Sigma, action: runMathBlock },
+    { kind: "button", key: "rule", label: t("toolbar.rule"), icon: Minus, action: runHorizontalRule },
+    { kind: "dropdown", key: "moreBlocks", label: t("toolbar.moreBlocks"), icon: Blocks, menu: "block", width: 192 },
+    // Group 6: AI assisted editing on the current selection.
+    { kind: "divider", key: "d5" },
+    {
+      kind: "dropdown",
+      key: "aiEdit",
+      label: t("toolbar.aiEdit"),
+      icon: Sparkles,
+      menu: "ai",
+      width: 160,
+    },
+    { kind: "divider", key: "d6" },
+    // Group 7: import an external document as a new note.
+    {
+      kind: "button",
+      key: "importArticle",
+      label: t("library.importNote"),
+      icon: FileUp,
+      action: () => void importArticles(),
+    },
   ];
 
   return (
@@ -427,12 +713,56 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
           <IconButton label={t("editor.save")} onClick={() => void saveActiveNote()}>
             <Save className="h-4 w-4" />
           </IconButton>
+          <Tooltip label={isExporting ? t("editor.exporting") : t("editor.export")} suppress={openDropdownKey === "export"}>
+            <ToolbarDropdownButton
+              disabled={!hasDocument || isExporting}
+              icon={<FileDown className="h-3.5 w-3.5" />}
+              label={t("editor.export")}
+              onOpenChange={(isOpen) => setOpenDropdownKey(isOpen ? "export" : null)}
+              width={200}
+            >
+              {(close) => (
+                <>
+                  <ToolbarMenuItem
+                    label={t("editor.exportWord")}
+                    onSelect={() => {
+                      close();
+                      void exportActiveNote("word");
+                    }}
+                  />
+                  <ToolbarMenuItem
+                    label={t("editor.exportHtml")}
+                    onSelect={() => {
+                      close();
+                      void exportActiveNote("html");
+                    }}
+                  />
+                  <ToolbarMenuItem
+                    label={t("editor.exportMarkdown")}
+                    onSelect={() => {
+                      close();
+                      void exportActiveNote("markdown");
+                    }}
+                  />
+                  <ToolbarMenuItem
+                    label={t("editor.exportPdf")}
+                    onSelect={() => {
+                      close();
+                      void exportActiveNote("pdf");
+                    }}
+                    separatorBefore
+                  />
+                </>
+              )}
+            </ToolbarDropdownButton>
+          </Tooltip>
           <IconButton
-            disabled={!hasDocument || isExporting}
-            label={isExporting ? t("editor.exportingPdf") : t("editor.exportPdf")}
-            onClick={() => void exportActivePdf()}
+            className="max-[760px]:hidden"
+            disabled={!hasDocument}
+            label={t("editor.versions")}
+            onClick={() => setVersionsOpen(true)}
           >
-            <FileDown className="h-4 w-4" />
+            <History className="h-4 w-4" />
           </IconButton>
           <IconButton
             className="max-[760px]:hidden"
@@ -461,13 +791,206 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         className="markdown-toolbar flex items-center gap-0.5 overflow-x-auto border-b border-border px-3.5"
         role="toolbar"
       >
-        {toolbar.map(({ label, icon: Icon, action, divider }) => (
-          <div className={cn("flex items-center", divider && "toolbar-divider ml-1 pl-1")} key={label}>
-            <IconButton className="format-button" label={label} onClick={action}>
-              <Icon className="h-3.5 w-3.5" />
-            </IconButton>
-          </div>
-        ))}
+        {toolbar.map((entry) =>
+          entry.kind === "divider" ? (
+            <span aria-hidden="true" className="toolbar-group-divider" key={entry.key} />
+          ) : entry.kind === "dropdown" ? (
+            <Tooltip key={entry.key} label={entry.label} suppress={openDropdownKey === entry.key}>
+              <ToolbarDropdownButton
+                disabled={entry.key === "aiEdit" && aiBusy}
+                icon={<entry.icon className="h-3.5 w-3.5" />}
+                label={entry.label}
+                onOpenChange={(isOpen) => setOpenDropdownKey(isOpen ? entry.key : null)}
+                width={entry.width}
+              >
+                {(close) =>
+                  entry.menu === "heading" ? (
+                    <HeadingMenuItems
+                      currentLevel={null}
+                      onSelect={(level) => {
+                        close();
+                        runHeading(level);
+                      }}
+                    />
+                  ) : entry.menu === "inline" ? (
+                    <>
+                      <ToolbarMenuItem
+                        combo="mod+shift+h"
+                        label={t("toolbar.highlight")}
+                        onSelect={() => {
+                          close();
+                          runInline("highlight");
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.inlineMath")}
+                        onSelect={() => {
+                          close();
+                          runInline("inlineMath");
+                        }}
+                        separatorBefore
+                      />
+                    </>
+                  ) : entry.menu === "note" ? (
+                    <>
+                      <ToolbarMenuItem
+                        label={t("toolbar.wikiLink")}
+                        onSelect={() => {
+                          close();
+                          setNoteSyntaxDialog({ kind: "notePicker", embed: false });
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.noteEmbed")}
+                        onSelect={() => {
+                          close();
+                          setNoteSyntaxDialog({ kind: "notePicker", embed: true });
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.remoteImage")}
+                        onSelect={() => {
+                          close();
+                          setNoteSyntaxDialog({ kind: "remoteImage" });
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.tag")}
+                        onSelect={() => {
+                          close();
+                          runTag();
+                        }}
+                        separatorBefore
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.blockId")}
+                        onSelect={() => {
+                          close();
+                          runBlockId();
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.blockReference")}
+                        onSelect={() => {
+                          close();
+                          runWrap("[[#^", "]]");
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.footnote")}
+                        onSelect={() => {
+                          close();
+                          runFootnote();
+                        }}
+                        separatorBefore
+                      />
+                    </>
+                  ) : entry.menu === "ai" ? (
+                    <>
+                      <ToolbarMenuItem
+                        icon={<WandSparkles className="h-3.5 w-3.5" />}
+                        label={t("editor.aiExpand")}
+                        onSelect={() => {
+                          close();
+                          void runAiOnSelection("expand");
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        icon={<WandSparkles className="h-3.5 w-3.5" />}
+                        label={t("editor.aiPolish")}
+                        onSelect={() => {
+                          close();
+                          void runAiOnSelection("polish");
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        icon={<WandSparkles className="h-3.5 w-3.5" />}
+                        label={t("editor.aiSummarize")}
+                        onSelect={() => {
+                          close();
+                          void runAiOnSelection("summarize");
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        icon={<WandSparkles className="h-3.5 w-3.5" />}
+                        label={t("editor.aiTranslate")}
+                        onSelect={() => {
+                          close();
+                          void runAiOnSelection("translate");
+                        }}
+                        separatorBefore
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <ToolbarMenuItem
+                        label={t("toolbar.menuMermaid")}
+                        onSelect={() => {
+                          close();
+                          runMermaid();
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.enhancedCodeBlock")}
+                        onSelect={() => {
+                          close();
+                          runAdvancedCodeBlock();
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.menuCallout")}
+                        onSelect={() => {
+                          close();
+                          runCallout();
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.menuDetails")}
+                        onSelect={() => {
+                          close();
+                          runDetails();
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label={t("toolbar.menuTabs")}
+                        onSelect={() => {
+                          close();
+                          runTabs();
+                        }}
+                      />
+                      <ToolbarMenuItem
+                        label="Front Matter"
+                        onSelect={() => {
+                          close();
+                          runFrontMatter();
+                        }}
+                        separatorBefore
+                      />
+                    </>
+                  )
+                }
+              </ToolbarDropdownButton>
+            </Tooltip>
+          ) : entry.kind === "table" ? (
+            <TableGridPicker
+              icon={<entry.icon className="h-3.5 w-3.5" />}
+              key={entry.key}
+              label={entry.label}
+              onPick={(rows, cols) => runTable(rows, cols)}
+            />
+          ) : (
+            <Tooltip combo={entry.combo} key={entry.key} label={entry.label}>
+              <IconButton
+                className="format-button"
+                label={entry.label}
+                onClick={entry.action}
+                title=""
+              >
+                <entry.icon className="h-3.5 w-3.5" />
+              </IconButton>
+            </Tooltip>
+          ),
+        )}
       </div>
 
       {!hasDocument ? (
@@ -505,6 +1028,7 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
                   onChange={handleEditorChange}
                   highlightDrop={nativeDropActive}
                   onContextMenu={openEditorMenu}
+                  onEditorView={handleEditorView}
                   onOpenNote={(path) => void selectNote(path)}
                   onPasteImages={savePastedImages}
                   onScroll={() => syncScroll("editor")}
@@ -559,8 +1083,44 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         onUndo={() => editorRef.current?.undo()}
         target={editorMenu}
       />
+      <NotePickerDialog
+        catalog={graph.nodes}
+        embed={noteSyntaxDialog?.kind === "notePicker" ? noteSyntaxDialog.embed : false}
+        onClose={() => setNoteSyntaxDialog(null)}
+        onInsert={insertNoteSyntaxToken}
+        open={noteSyntaxDialog?.kind === "notePicker"}
+      />
+      <RemoteImageDialog
+        onClose={() => setNoteSyntaxDialog(null)}
+        onInsert={insertRemoteImage}
+        open={noteSyntaxDialog?.kind === "remoteImage"}
+      />
+      {versionsOpen && <VersionsPanel onClose={() => setVersionsOpen(false)} />}
     </section>
   );
 });
+
+function HeadingMenuItems({
+  currentLevel,
+  onSelect,
+}: {
+  currentLevel: 1 | 2 | 3 | 4 | 5 | 6 | null;
+  onSelect: (level: 1 | 2 | 3 | 4 | 5 | 6) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <>
+      {([1, 2, 3, 4, 5, 6] as const).map((level) => (
+        <ToolbarMenuItem
+          checked={currentLevel === level}
+          combo={`mod+${level}`}
+          key={level}
+          label={t(`toolbar.headingLevel${level}` as Parameters<typeof t>[0])}
+          onSelect={() => onSelect(level)}
+        />
+      ))}
+    </>
+  );
+}
 
 export default EditorWorkspace;

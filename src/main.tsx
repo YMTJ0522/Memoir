@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "./platform/buffer-stub";
 import AppShell from "./app/AppShell";
 import { bootstrapInterfaceZoom } from "./platform/dpi";
 import { applyHostWindowChrome } from "./platform/window";

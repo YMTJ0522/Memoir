@@ -63,6 +63,13 @@
   opacity: 0.45;
 }
 
+/* Rows without a leading icon column (inkstone dropdown parity): the label
+   starts at the row padding instead of reserving an empty 16px slot. */
+.memoir-context-menu-item--plain {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
 .memoir-context-menu-icon {
   display: grid;
   width: 16px;

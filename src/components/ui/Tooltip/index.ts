@@ -1,1 +1,1 @@
-export { Tooltip } from "./Tooltip";
+export { Kbd, Tooltip } from "./Tooltip";

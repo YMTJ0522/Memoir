@@ -15,6 +15,13 @@ export const MIN_UI_SCALE = 0.8;
 export const MAX_UI_SCALE = 2;
 export const DEFAULT_UI_SCALE = 1;
 
+export type AiSettings = {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+};
+
 export type AppSettings = {
   appearance: {
     locale: LocalePreference;
@@ -39,6 +46,7 @@ export type AppSettings = {
     noteSort: NoteSortField;
     noteSortDirection: NoteSortDirection;
   };
+  ai: AiSettings;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -65,7 +73,22 @@ export const DEFAULT_SETTINGS: AppSettings = {
     noteSort: "name",
     noteSortDirection: "asc",
   },
+  ai: {
+    enabled: false,
+    baseUrl: "",
+    apiKey: "",
+    model: "",
+  },
 };
+
+export function isAiConfigured(settings: Pick<AiSettings, "enabled" | "baseUrl" | "apiKey" | "model">): boolean {
+  return (
+    settings.enabled &&
+    settings.baseUrl.trim() !== "" &&
+    settings.apiKey.trim() !== "" &&
+    settings.model.trim() !== ""
+  );
+}
 
 export function clampUiScale(value: unknown): number {
   const numeric = typeof value === "number" ? value : Number(value);
@@ -95,6 +118,7 @@ export function mergeSettings(
     appearance?: Partial<AppSettings["appearance"]>;
     editor?: Partial<AppSettings["editor"]>;
     general?: Partial<AppSettings["general"]>;
+    ai?: Partial<AppSettings["ai"]>;
   } | null,
 ): AppSettings {
   const appearance = {
@@ -128,6 +152,10 @@ export function mergeSettings(
       noteSortDirection: isNoteSortDirection(general.noteSortDirection)
         ? general.noteSortDirection
         : DEFAULT_SETTINGS.general.noteSortDirection,
+    },
+    ai: {
+      ...DEFAULT_SETTINGS.ai,
+      ...settings?.ai,
     },
   };
 }

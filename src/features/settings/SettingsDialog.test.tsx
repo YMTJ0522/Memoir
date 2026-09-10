@@ -228,5 +228,89 @@ describe("SettingsDialog", () => {
       },
     });
   });
+
+  it("edits AI settings and probes the connection", async () => {
+    const gateways = createMockGateways();
+    setGatewaysForTests(gateways);
+    const onSettingsChange = vi.fn();
+    const user = userEvent.setup();
+    const view = render(
+      <SettingsDialog
+        onClose={() => undefined}
+        onReset={() => undefined}
+        onSectionChange={() => undefined}
+        onSettingsChange={onSettingsChange}
+        open
+        section="ai"
+        settings={DEFAULT_SETTINGS}
+      />,
+    );
+
+    await user.click(view.getByRole("switch", { name: "启用 AI 编写" }));
+    expect(onSettingsChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_SETTINGS,
+      ai: { ...DEFAULT_SETTINGS.ai, enabled: true },
+    });
+
+    // needs configuration first
+    await user.click(view.getByRole("button", { name: "测试连接" }));
+    expect(
+      await view.findByText("请先启用并填写接口地址、API Key 与模型名称。"),
+    ).toBeInTheDocument();
+
+    // configured settings now succeed via the mock gateway
+    const configured = {
+      ...DEFAULT_SETTINGS,
+      ai: {
+        enabled: true,
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "sk-test",
+        model: "test-model",
+      },
+    };
+    view.rerender(
+      <SettingsDialog
+        onClose={() => undefined}
+        onReset={() => undefined}
+        onSectionChange={() => undefined}
+        onSettingsChange={onSettingsChange}
+        open
+        section="ai"
+        settings={configured}
+      />,
+    );
+    await user.click(view.getByRole("button", { name: "测试连接" }));
+    expect(await view.findByText("AI 连接成功（模拟）。")).toBeInTheDocument();
+    expect(gateways.ai.testCalls).toBe(1);
+  });
+
+  it("shows the AI connection error from the gateway", async () => {
+    const gateways = createMockGateways();
+    gateways.ai.failTest = true;
+    setGatewaysForTests(gateways);
+    const user = userEvent.setup();
+    const view = render(
+      <SettingsDialog
+        onClose={() => undefined}
+        onReset={() => undefined}
+        onSectionChange={() => undefined}
+        onSettingsChange={() => undefined}
+        open
+        section="ai"
+        settings={{
+          ...DEFAULT_SETTINGS,
+          ai: {
+            enabled: true,
+            baseUrl: "https://api.example.com/v1",
+            apiKey: "sk-test",
+            model: "test-model",
+          },
+        }}
+      />,
+    );
+
+    await user.click(view.getByRole("button", { name: "测试连接" }));
+    expect(await view.findByText("模拟连接失败")).toBeInTheDocument();
+  });
 });
 

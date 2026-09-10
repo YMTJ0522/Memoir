@@ -1,6 +1,7 @@
 import type { FolderAppearance } from "./folders";
 import type { WorkspaceLayoutState } from "./layout";
 import type { AppSettings } from "./settings";
+import type { AiSessionRecord } from "../gateways/contracts";
 
 export const APP_STATE_VERSION = 1;
 
@@ -21,6 +22,9 @@ export type AppState = {
   folderAppearances: Record<string, Record<string, FolderAppearance>>;
   window?: WindowFrameState;
   skippedUpdateVersion?: string | null;
+  /** Persisted AI chat sessions (chat history survives restarts). */
+  aiSessions?: AiSessionRecord[];
+  activeAiSessionId?: string | null;
 };
 
 export type LegacyStatePayload = {

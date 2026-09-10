@@ -1,9 +1,12 @@
-import { Check, ExternalLink, Info, Palette, RotateCcw, SlidersHorizontal, Type } from "lucide-react";
+import { Check, ExternalLink, Info, Palette, RotateCcw, SlidersHorizontal, Sparkles, Type } from "lucide-react";
+import { useState } from "react";
 import { GITHUB_REPO_URL } from "../../domain/app-update";
 import type { AppSettings, LocalePreference } from "../../domain/settings";
+import { isAiConfigured } from "../../domain/settings";
 import {
   Button,
   Dialog,
+  Input,
   SegmentedControl,
   Select,
   Toggle,
@@ -324,6 +327,92 @@ function EditorSettings({
   );
 }
 
+function AiSettingsSection({
+  settings,
+  onChange,
+}: {
+  settings: AppSettings;
+  onChange: (settings: AppSettings) => void;
+}) {
+  const { t } = useI18n();
+  const ai = settings.ai;
+  const [testState, setTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [testMessage, setTestMessage] = useState("");
+  const update = (patch: Partial<AppSettings["ai"]>) =>
+    onChange({ ...settings, ai: { ...ai, ...patch } });
+
+  const runTest = async () => {
+    if (!isAiConfigured(ai)) {
+      setTestState("error");
+      setTestMessage(t("settings.aiTestNeedsConfig"));
+      return;
+    }
+    setTestState("testing");
+    setTestMessage("");
+    try {
+      const message = await getGateways().ai.testConnection();
+      setTestState("ok");
+      setTestMessage(message || t("settings.aiTestOk"));
+    } catch (error) {
+      setTestState("error");
+      setTestMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  return (
+    <div className="settings-section">
+      <SettingRow description={t("settings.aiEnabledHint")} label={t("settings.aiEnabled")}>
+        <Toggle
+          checked={ai.enabled}
+          label={t("settings.aiEnabled")}
+          onChange={(enabled) => update({ enabled })}
+        />
+      </SettingRow>
+      <SettingRow description={t("settings.aiBaseUrlHint")} label={t("settings.aiBaseUrl")}>
+        <Input
+          className="w-[320px] max-sm:w-full"
+          onChange={(event) => update({ baseUrl: event.target.value })}
+          placeholder={t("settings.aiBaseUrlPlaceholder")}
+          type="url"
+          value={ai.baseUrl}
+        />
+      </SettingRow>
+      <SettingRow description={t("settings.aiApiKeyHint")} label={t("settings.aiApiKey")}>
+        <Input
+          className="w-[240px] max-sm:w-full"
+          onChange={(event) => update({ apiKey: event.target.value })}
+          placeholder="sk-…"
+          type="password"
+          value={ai.apiKey}
+        />
+      </SettingRow>
+      <SettingRow description={t("settings.aiModelHint")} label={t("settings.aiModel")}>
+        <Input
+          className="w-[200px] max-sm:w-full"
+          onChange={(event) => update({ model: event.target.value })}
+          placeholder="gpt-4o-mini"
+          value={ai.model}
+        />
+      </SettingRow>
+      <SettingRow label={t("settings.aiTest")}>
+        <Button
+          disabled={testState === "testing"}
+          onClick={() => void runTest()}
+          variant="secondary"
+        >
+          {testState === "testing" ? t("settings.aiTesting") : t("settings.aiTest")}
+        </Button>
+      </SettingRow>
+      {testState !== "idle" && (
+        <div className={`settings-ai-test-result ${testState === "ok" ? "is-ok" : "is-error"}`}>
+          {testState === "ok" && <Check />}
+          <span>{testMessage}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsDialog({
   open,
   section,
@@ -346,6 +435,7 @@ export default function SettingsDialog({
     { value: "general", labelKey: "settings.general", icon: SlidersHorizontal },
     { value: "appearance", labelKey: "settings.appearance", icon: Palette },
     { value: "editor", labelKey: "settings.editor", icon: Type },
+    { value: "ai", labelKey: "settings.ai", icon: Sparkles },
     { value: "about", labelKey: "settings.about", icon: Info },
   ] as const satisfies ReadonlyArray<{
     value: SettingsSection;
@@ -396,6 +486,9 @@ export default function SettingsDialog({
           )}
           {section === "editor" && (
             <EditorSettings key="editor" onChange={onSettingsChange} settings={settings} />
+          )}
+          {section === "ai" && (
+            <AiSettingsSection key="ai" onChange={onSettingsChange} settings={settings} />
           )}
           {section === "about" && (
             <div className="settings-about" key="about">

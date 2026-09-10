@@ -580,9 +580,8 @@ impl CloudSyncService {
         local: Option<&FileIdentity>,
         remote: Option<&FileIdentity>,
     ) -> AppResult<Option<String>> {
-        if !is_attachment_relative(Path::new(path)) {
-            return Ok(None);
-        }
+        // Notes and attachments alike: the losing side of a conflict is written
+        // to a sidecar copy so no user content is silently overwritten.
         let sidecar = unique_sidecar_path(workspace_root, &self.filesystem, path);
         match planned {
             SyncAction::Conflict(crate::domain::cloud_sync::ConflictWinner::Remote) => {
@@ -972,6 +971,38 @@ mod tests {
         assert_eq!(
             std::fs::read(std::path::Path::new(&root).join(path)).unwrap(),
             b"remote-newer-bytes!!"
+        );
+    }
+
+    #[test]
+    fn keeps_a_local_copy_when_a_remote_note_wins() {
+        let (_dir, service, root) = setup();
+        fs::write(std::path::Path::new(&root).join("note.md"), "local-old").unwrap();
+        let provider = MemoryProvider::new();
+        service.run_sync_with(&root, &provider).unwrap();
+
+        fs::write(std::path::Path::new(&root).join("note.md"), "local-changed").unwrap();
+        provider.insert("note.md", b"remote-newer", 9_999_999_999_999);
+        let report = service.run_sync_with(&root, &provider).unwrap();
+        assert_eq!(report.downloaded, 1);
+        assert_eq!(report.conflicts, 1);
+        let backups: Vec<_> = fs::read_dir(std::path::Path::new(&root))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".conflict-"))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(
+            fs::read_to_string(
+                std::path::Path::new(&root).join(backups.first().unwrap())
+            )
+            .unwrap(),
+            "local-changed"
+        );
+        assert_eq!(
+            fs::read_to_string(std::path::Path::new(&root).join("note.md")).unwrap(),
+            "remote-newer"
         );
     }
 

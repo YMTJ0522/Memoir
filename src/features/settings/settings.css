@@ -456,3 +456,32 @@
     flex-wrap: wrap;
   }
 }
+
+.settings-ai-test-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--memoir-surface, rgba(0, 0, 0, 0.04));
+  color: var(--memoir-text-muted, inherit);
+  word-break: break-all;
+}
+
+.settings-ai-test-result svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.settings-ai-test-result.is-ok {
+  color: var(--memoir-ok, #3e9b73);
+  background: color-mix(in srgb, #3e9b73 10%, transparent);
+}
+
+.settings-ai-test-result.is-error {
+  color: var(--memoir-danger, #d65f4d);
+  background: color-mix(in srgb, #d65f4d 10%, transparent);
+}

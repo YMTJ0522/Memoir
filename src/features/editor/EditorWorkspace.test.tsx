@@ -2,11 +2,11 @@ import { cleanup, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/app-store";
-import { exportNotePdf } from "../export/export-note-pdf";
+import { exportNote } from "../export/export-note";
 import { EditorWorkspace } from "./EditorWorkspace";
 
-vi.mock("../export/export-note-pdf", () => ({
-  exportNotePdf: vi.fn(),
+vi.mock("../export/export-note", () => ({
+  exportNote: vi.fn(),
 }));
 
 afterEach(() => {
@@ -48,8 +48,10 @@ describe("EditorWorkspace PDF export", () => {
       <EditorWorkspace isDark={false} onDelete={() => undefined} onRename={() => undefined} />,
     );
 
-    await user.click(view.getByRole("button", { name: "导出 PDF" }));
-    expect(exportNotePdf).toHaveBeenCalledWith("alpha.md");
+    await user.click(view.getByRole("button", { name: "导出" }));
+    const pdfItem = view.getByRole("menuitem", { name: "导出 PDF" });
+    await user.click(pdfItem);
+    expect(exportNote).toHaveBeenCalledWith("alpha.md", "pdf");
   });
 
   it("invokes header delete and rename without passing the click event", async () => {
@@ -84,5 +86,33 @@ describe("EditorWorkspace PDF export", () => {
     await user.click(view.getByRole("button", { name: "重命名" }));
     expect(onDelete).toHaveBeenCalledWith();
     expect(onRename).toHaveBeenCalledWith();
+  });
+});
+
+describe("EditorWorkspace article import", () => {
+  it("places the import article button last in the markdown toolbar and triggers the store action", async () => {
+    const importArticles = vi.fn().mockResolvedValue(undefined);
+    const original = useAppStore.getState().importArticles;
+    useAppStore.setState({ importArticles, workspaceRoot: "/workspace" });
+    try {
+      const user = userEvent.setup();
+      const view = render(
+        <EditorWorkspace isDark={false} onDelete={() => undefined} onRename={() => undefined} />,
+      );
+
+      const toolbar = view.getByRole("toolbar", { name: "Markdown 工具栏" });
+      const buttons = view.getAllByRole("button", { name: "导入文章" });
+      expect(buttons).toHaveLength(1);
+      expect(toolbar.contains(buttons[0])).toBe(true);
+
+      // It must be the last interactive toolbar entry (after the "more blocks" dropdown).
+      const interactive = toolbar.querySelectorAll("button");
+      expect(interactive[interactive.length - 1]).toBe(buttons[0]);
+
+      await user.click(buttons[0]);
+      expect(importArticles).toHaveBeenCalledTimes(1);
+    } finally {
+      useAppStore.setState({ importArticles: original });
+    }
   });
 });
