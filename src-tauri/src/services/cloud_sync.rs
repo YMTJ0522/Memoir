@@ -162,7 +162,13 @@ impl CloudSyncService {
             Err(error) => {
                 profile.last_sync_ms = Some(now_ms());
                 profile.last_status = Some("error".into());
-                profile.last_error = Some(error.message.clone());
+                let detail = error
+                    .details
+                    .as_deref()
+                    .filter(|detail| !detail.is_empty())
+                    .map(|detail| format!(" ({detail})"))
+                    .unwrap_or_default();
+                profile.last_error = Some(format!("{}{}", error.message, detail));
                 let _ = self.save_profile(&workspace_key, profile);
                 Err(error)
             }

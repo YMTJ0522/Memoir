@@ -655,6 +655,7 @@ export const zh = {
   "errors.saveAiSessions": "AI 会话保存失败：{message}",
   "errors.testCloudSync": "连接测试失败：{message}",
   "errors.runCloudSync": "云同步失败：{message}",
+  "errors.runCloudSyncRateLimited": "云同步失败：云服务暂时限流（请求过于频繁），请稍等片刻再试。",
 
   "workspace.chooseFolder": "选择笔记文件夹",
 } as const;

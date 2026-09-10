@@ -663,14 +663,25 @@ fn map_status(status: reqwest::StatusCode, operation: &str) -> AppError {
         401 | 403 => ErrorCode::Io,
         404 => ErrorCode::NotFound,
         409 => ErrorCode::Conflict,
+        429 | 503 => ErrorCode::Io,
         _ => ErrorCode::Io,
     };
     let message = match status.as_u16() {
         401 | 403 => "Cloud provider rejected the credentials.".to_string(),
         404 => "Remote folder was not found.".to_string(),
+        429 | 503 => {
+            "The cloud service is temporarily rate-limited. Please wait a moment and try again."
+                .to_string()
+        }
         _ => format!("{operation} failed."),
     };
-    AppError::new(code, message).with_details(format!("HTTP {}", status.as_u16()))
+    let mut error = AppError::new(code, message);
+    if matches!(status.as_u16(), 429 | 503) {
+        error = error.with_details(format!("HTTP {} (rate limited)", status.as_u16()));
+    } else {
+        error = error.with_details(format!("HTTP {}", status.as_u16()));
+    }
+    error
 }
 
 #[cfg(test)]
@@ -828,5 +839,22 @@ mod tests {
         let unrelated =
             AppError::new(ErrorCode::Io, "List remote folder failed.").with_details("HTTP 500");
         assert!(!base_collection_missing(&unrelated));
+    }
+
+    #[test]
+    fn maps_rate_limits_to_friendly_messages() {
+        let limited = map_status(reqwest::StatusCode::TOO_MANY_REQUESTS, "List remote folder");
+        assert_eq!(limited.code, ErrorCode::Io);
+        assert!(limited.message.contains("rate-limited"));
+        assert_eq!(limited.details.as_deref(), Some("HTTP 429 (rate limited)"));
+
+        let busy = map_status(reqwest::StatusCode::SERVICE_UNAVAILABLE, "List remote folder");
+        assert_eq!(busy.code, ErrorCode::Io);
+        assert!(busy.message.contains("rate-limited"));
+        assert_eq!(busy.details.as_deref(), Some("HTTP 503 (rate limited)"));
+
+        let generic = map_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR, "List remote folder");
+        assert!(!generic.message.contains("rate-limited"));
+        assert_eq!(generic.details.as_deref(), Some("HTTP 500"));
     }
 }

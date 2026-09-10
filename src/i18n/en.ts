@@ -658,6 +658,7 @@ export const en = {
   "errors.saveAiSessions": "Couldn't save AI chats: {message}",
   "errors.testCloudSync": "Couldn't test the connection: {message}",
   "errors.runCloudSync": "Couldn't sync: {message}",
+  "errors.runCloudSyncRateLimited": "Couldn't sync: the cloud service is temporarily rate-limited (too many requests). Please wait a moment and try again.",
 
   "workspace.chooseFolder": "Choose a notes folder",
 } satisfies Record<MessageKey, string>;
