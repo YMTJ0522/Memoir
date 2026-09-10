@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markdownForAttachments } from "../domain/attachments";
+import { GatewayError } from "../domain/errors";
 import { resolveLocale, t } from "../i18n";
 import { AUTOSAVE_INTERVAL_MS, NOTE_METADATA_DEBOUNCE_MS, createAppStore } from "./app-store";
 import { createMockGateways } from "../test/mock-gateways";
@@ -705,6 +706,91 @@ await store.getState().importArticles();
       await Promise.resolve();
     }
     expect(gateways.cloudSync.runCalls).toBe(2);
+  });
+
+  it("shows a rate-limit message when the cloud provider throttles the run", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    await store.getState().saveCloudSyncProfile({
+      enabled: true,
+      provider: "webdav",
+      remotePrefix: "Memoir",
+      webdav: {
+        url: "https://dav.example/dav",
+        username: "ada",
+        password: "secret",
+        insecureTls: false,
+      },
+    });
+    gateways.cloudSync.failRun = true;
+    gateways.cloudSync.runError = new GatewayError({
+      code: "io",
+      message: "The cloud service is temporarily rate-limited.",
+      details: "HTTP 503 (rate limited)",
+    });
+
+    const locale = resolveLocale(store.getState().settings.appearance.locale);
+    const expected = t(locale, "errors.runCloudSyncRateLimited");
+    await expect(store.getState().runCloudSync()).rejects.toThrow();
+    expect(store.getState().error).toBe(expected);
+  });
+
+  it("falls back to the rate-limit message when details are stripped", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    await store.getState().saveCloudSyncProfile({
+      enabled: true,
+      provider: "webdav",
+      remotePrefix: "Memoir",
+      webdav: {
+        url: "https://dav.example/dav",
+        username: "ada",
+        password: "secret",
+        insecureTls: false,
+      },
+    });
+    gateways.cloudSync.failRun = true;
+    gateways.cloudSync.runError = new GatewayError({
+      code: "io",
+      message: "The cloud service is temporarily rate-limited.",
+    });
+
+    const locale = resolveLocale(store.getState().settings.appearance.locale);
+    const expected = t(locale, "errors.runCloudSyncRateLimited");
+    await expect(store.getState().runCloudSync()).rejects.toThrow();
+    expect(store.getState().error).toBe(expected);
+  });
+
+  it("keeps the raw provider message for unrelated cloud sync failures", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    await store.getState().saveCloudSyncProfile({
+      enabled: true,
+      provider: "webdav",
+      remotePrefix: "Memoir",
+      webdav: {
+        url: "https://dav.example/dav",
+        username: "ada",
+        password: "secret",
+        insecureTls: false,
+      },
+    });
+    gateways.cloudSync.failRun = true;
+    gateways.cloudSync.runError = new GatewayError({
+      code: "io",
+      message: "Remote folder was not found.",
+      details: "HTTP 404",
+    });
+
+    const locale = resolveLocale(store.getState().settings.appearance.locale);
+    const expected = t(locale, "errors.runCloudSync", {
+      message: "Remote folder was not found.",
+    });
+    await expect(store.getState().runCloudSync()).rejects.toThrow();
+    expect(store.getState().error).toBe(expected);
   });
 
   it("exposes live cloud sync progress while a run is in flight", async () => {

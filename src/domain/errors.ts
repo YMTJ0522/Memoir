@@ -30,10 +30,14 @@ export function mapGatewayError(error: unknown): GatewayError {
 
   if (typeof error === "object" && error !== null) {
     const candidate = error as Partial<GatewayErrorPayload>;
-    if (typeof candidate.code === "string" && typeof candidate.message === "string") {
+    const message =
+      typeof candidate.message === "string" ? candidate.message : undefined;
+    if (message !== undefined) {
+      // Keep details even when `code` is missing (some hosts strip it), so
+      // callers can still react to structured error details.
       return new GatewayError({
-        code: candidate.code as ErrorCode,
-        message: candidate.message,
+        code: typeof candidate.code === "string" ? (candidate.code as ErrorCode) : "unknown",
+        message,
         details: typeof candidate.details === "string" ? candidate.details : undefined,
       });
     }

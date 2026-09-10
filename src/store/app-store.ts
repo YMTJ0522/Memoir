@@ -1343,7 +1343,9 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
           return { ...result, report };
         } catch (error) {
           const gateway = mapGatewayError(error);
-          const rateLimited = gateway.details?.includes("rate limited") ?? false;
+          const rateLimited =
+            /rate[- ]?limited/i.test(gateway.details ?? "") ||
+            /rate[- ]?limited/i.test(gateway.message);
           set({
             error: rateLimited
               ? storeT(get().settings, "errors.runCloudSyncRateLimited")

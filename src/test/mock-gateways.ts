@@ -589,6 +589,7 @@ export class MockCloudSyncGateway implements CloudSyncGateway {
   lastRun: { root: string; profile?: CloudSyncProfileInput } | null = null;
   failTest = false;
   failRun = false;
+  runError: Error = new Error("sync failed");
   nextProbe: CloudSyncProbe = { ok: true, message: "Connected." };
   runHold: Promise<void> | null = null;
   runCalls = 0;
@@ -627,7 +628,7 @@ export class MockCloudSyncGateway implements CloudSyncGateway {
     this.runCalls += 1;
     this.lastRun = { root: workspaceRoot, profile };
     if (this.runHold) await this.runHold;
-    if (this.failRun) throw new Error("sync failed");
+    if (this.failRun) throw this.runError;
     if (profile) {
       await this.saveProfile(workspaceRoot, profile);
     }
