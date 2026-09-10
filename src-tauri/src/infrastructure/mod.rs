@@ -1,3 +1,4 @@
+pub mod ai_client;
 pub mod app_data;
 pub mod atomic;
 pub mod cloud;

@@ -1,8 +1,24 @@
-import { ImagePlus, Loader2, Paperclip, Search } from "lucide-react";
-import { useMemo, useState } from "react";
-import { AlertDialog, Input, Surface, cn } from "../../components/ui";
+import {
+  Check,
+  FileArchive,
+  FileAudio,
+  FileSpreadsheet,
+  FileText,
+  FileVideo,
+  ImagePlus,
+  Loader2,
+  Paperclip,
+  Search,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertDialog, Button, Input, Surface, cn } from "../../components/ui";
 import type { AttachmentFile } from "../../domain/attachments";
-import { formatBytes, markdownImageForAttachment } from "../../domain/attachments";
+import {
+  attachmentKindFromExtension,
+  formatBytes,
+  markdownForAttachment,
+} from "../../domain/attachments";
 import { resolveWorkspaceFilePath } from "../../domain/paths";
 import { getGateways } from "../../gateways";
 import { formatRelativeTime } from "../../i18n";
@@ -25,26 +41,69 @@ export function AttachmentLibrary({
   const density = useAppStore((state) => state.settings.appearance.density);
   const importAttachments = useAppStore((state) => state.importAttachments);
   const deleteAttachment = useAppStore((state) => state.deleteAttachment);
+  const deleteAttachments = useAppStore((state) => state.deleteAttachments);
   const { t, tc, locale } = useI18n();
   const [query, setQuery] = useState("");
   const [menuTarget, setMenuTarget] = useState<AttachmentMenuTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AttachmentFile | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return attachments;
     return attachments.filter((item) => item.fileName.toLowerCase().includes(needle));
   }, [attachments, query]);
 
+  // Prune stale selections when attachments change (e.g. after refresh or delete).
+  useEffect(() => {
+    setSelectedPaths((current) => {
+      if (current.size === 0) return current;
+      const known = new Set(attachments.map((item) => item.relativePath));
+      const next = new Set([...current].filter((path) => known.has(path)));
+      return next.size === current.size ? current : next;
+    });
+  }, [attachments]);
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedPaths(new Set());
+    setConfirmBatchDelete(false);
+  };
+
   const insertAttachment = (attachment: AttachmentFile) => {
     if (!activePath) {
       useAppStore.setState({ error: t("errors.pasteNeedsNote") });
       return;
     }
-    onInsert?.(markdownImageForAttachment(activePath, attachment));
+    onInsert?.(markdownForAttachment(activePath, attachment));
+  };
+
+  const toggleSelected = (relativePath: string) => {
+    setSelectedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(relativePath)) next.delete(relativePath);
+      else next.add(relativePath);
+      return next;
+    });
+  };
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((item) => selectedPaths.has(item.relativePath));
+
+  const toggleSelectAll = () => {
+    setSelectedPaths((current) => {
+      if (allFilteredSelected) {
+        const next = new Set(current);
+        for (const item of filtered) next.delete(item.relativePath);
+        return next;
+      }
+      return new Set([...current, ...filtered.map((item) => item.relativePath)]);
+    });
   };
 
   return (
-    <div className="memoir-fade-in flex min-h-0 flex-1 flex-col">
+    <div className="memoir-panel-in flex min-h-0 flex-1 flex-col">
       <label className="note-search relative mx-3 mt-2.5 block">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
         <Input
@@ -57,11 +116,65 @@ export function AttachmentLibrary({
         />
       </label>
       <div className="flex items-center justify-between px-4 pb-2 pt-3 text-[11px] font-medium text-muted">
-        <span>{tc("library.attachmentCount", filtered.length)}</span>
-        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+        {selectMode ? (
+          <>
+            <span>{t("library.selectedCount", { count: selectedPaths.size })}</span>
+            <span className="flex items-center gap-1">
+              {filtered.length > 0 && (
+                <Button
+                  className="h-6 px-2 text-[11px]"
+                  onClick={toggleSelectAll}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("library.selectAll")}
+                </Button>
+              )}
+              <Button
+                className="h-6 px-2 text-[11px]"
+                onClick={exitSelectMode}
+                size="sm"
+                variant="ghost"
+              >
+                <X className="h-3 w-3" />
+                {t("library.cancelSelect")}
+              </Button>
+            </span>
+          </>
+        ) : (
+          <>
+            <span>{tc("library.attachmentCount", filtered.length)}</span>
+            <span className="flex items-center gap-1">
+              {filtered.length > 0 && (
+                <Button
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => setSelectMode(true)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("library.select")}
+                </Button>
+              )}
+              {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            </span>
+          </>
+        )}
       </div>
+      {selectMode && selectedPaths.size > 0 && (
+        <div className="px-4 pb-2">
+          <Button
+            className="w-full"
+            onClick={() => setConfirmBatchDelete(true)}
+            size="sm"
+            variant="danger"
+          >
+            {t("library.deleteSelected")}（{selectedPaths.size}）
+          </Button>
+        </div>
+      )}
       <div className="attachment-grid grid flex-1 content-start gap-2 overflow-auto px-2.5 pb-3">
         {filtered.map((attachment) => {
+          const isSelected = selectedPaths.has(attachment.relativePath);
           const src = workspaceRoot
             ? getGateways().workspace.resolveMediaPath(
                 resolveWorkspaceFilePath(workspaceRoot, attachment.relativePath),
@@ -76,9 +189,14 @@ export function AttachmentLibrary({
                 "attachment-card group cursor-pointer rounded-lg border-transparent bg-transparent shadow-none",
                 density === "compact" ? "p-1.5" : "p-2",
                 menuTarget?.path === attachment.relativePath && "is-menu-target",
+                isSelected && "is-selected",
               )}
+              data-selected={isSelected || undefined}
               key={attachment.relativePath}
-              onClick={() => insertAttachment(attachment)}
+              onClick={() => {
+                if (selectMode) toggleSelected(attachment.relativePath);
+                else insertAttachment(attachment);
+              }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -91,17 +209,49 @@ export function AttachmentLibrary({
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  insertAttachment(attachment);
+                  if (selectMode) toggleSelected(attachment.relativePath);
+                  else insertAttachment(attachment);
                 }
               }}
               role="button"
               tabIndex={0}
             >
               <div className="attachment-thumb overflow-hidden rounded-md bg-elevated">
-                {src ? (
+                {attachmentKindFromExtension(attachment.extension) === "video" ? (
+                  <div className="grid h-full w-full place-items-center">
+                    <FileVideo className="h-6 w-6 text-muted" />
+                  </div>
+                ) : attachmentKindFromExtension(attachment.extension) === "audio" ? (
+                  <div className="grid h-full w-full place-items-center">
+                    <FileAudio className="h-6 w-6 text-muted" />
+                  </div>
+                ) : attachmentKindFromExtension(attachment.extension) === "archive" ? (
+                  <div className="grid h-full w-full place-items-center">
+                    <FileArchive className="h-6 w-6 text-muted" />
+                  </div>
+                ) : attachmentKindFromExtension(attachment.extension) === "document" ? (
+                  <div className="grid h-full w-full place-items-center">
+                    {/^(xls|xlsx|csv|ods)$/.test(attachment.extension.toLowerCase()) ? (
+                      <FileSpreadsheet className="h-6 w-6 text-muted" />
+                    ) : (
+                      <FileText className="h-6 w-6 text-muted" />
+                    )}
+                  </div>
+                ) : src ? (
                   <img alt="" className="h-full w-full object-cover" src={src} />
                 ) : (
                   <Paperclip className="h-5 w-5 text-muted" />
+                )}
+                {selectMode && (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "attachment-check",
+                      isSelected && "is-on",
+                    )}
+                  >
+                    {isSelected && <Check className="h-3 w-3" />}
+                  </span>
                 )}
               </div>
               <div className={cn("min-w-0", density === "compact" ? "mt-1" : "mt-1.5")}>
@@ -140,6 +290,10 @@ export function AttachmentLibrary({
         attachments={attachments}
         onClose={() => setMenuTarget(null)}
         onDelete={(attachment) => setDeleteTarget(attachment)}
+        onEnterSelectMode={() => {
+          setSelectMode(true);
+          setMenuTarget(null);
+        }}
         onInsert={insertAttachment}
         target={menuTarget}
       />
@@ -154,6 +308,18 @@ export function AttachmentLibrary({
           if (deleteTarget) void deleteAttachment(deleteTarget.relativePath);
         }}
         open={Boolean(deleteTarget)}
+        title={t("dialog.deleteAttachment")}
+      />
+      <AlertDialog
+        confirmLabel={t("dialog.moveToTrash")}
+        description={t("dialog.deleteAttachmentsConfirm", { count: selectedPaths.size })}
+        hint={t("dialog.recycleAttachmentHint")}
+        onClose={() => setConfirmBatchDelete(false)}
+        onConfirm={() => {
+          void deleteAttachments([...selectedPaths]);
+          exitSelectMode();
+        }}
+        open={confirmBatchDelete}
         title={t("dialog.deleteAttachment")}
       />
     </div>

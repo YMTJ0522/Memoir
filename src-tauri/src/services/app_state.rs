@@ -2,11 +2,12 @@ use crate::{
     domain::{
         app_update::{format_version, parse_version},
         cloud_sync::{sanitize_profile, CloudSyncProfile},
+        note_parse::parse_note,
         path::{normalize_workspace_key, validate_relative_path},
-        AppError, AppResult, AppSettings, AppState, ErrorCode, FolderAppearance,
-        LegacyStatePayload, MigrationResult, WorkspaceLayout,
+        AiSessionRecord, AppError, AppResult, AppSettings, AppState, ErrorCode, FolderAppearance,
+        LegacyStatePayload, MigrationResult, NoteVersion, NoteVersionMeta, WorkspaceLayout,
     },
-    infrastructure::app_data::AppDataRepository,
+    infrastructure::app_data::{stable_hash, AppDataRepository},
 };
 use std::{
     collections::BTreeSet,
@@ -28,7 +29,65 @@ impl AppStateService {
     }
 
     pub fn load(&self) -> AppResult<AppState> {
-        self.repository.load_state()
+        let mut state = self.repository.load_state()?;
+        if self.migrate_legacy_workspace_keys(&mut state)? {
+            self.repository.save_state(&state)?;
+        }
+        Ok(state)
+    }
+
+    /// Older releases persisted workspace keys as Windows verbatim paths
+    /// (`\\?\C:\...`), which break frontend path joining and asset URLs.
+    /// Rewrite those keys (and the derived draft/snapshot directories) to
+    /// the plain form once on load.
+    fn migrate_legacy_workspace_keys(&self, state: &mut AppState) -> AppResult<bool> {
+        let mut renamed: Vec<(String, String)> = Vec::new();
+        let mut rewrite = |key: &str, renamed: &mut Vec<(String, String)>| -> String {
+            match key.strip_prefix(r"\\?\") {
+                Some(rest) => {
+                    renamed.push((key.to_string(), rest.to_string()));
+                    rest.to_string()
+                }
+                None => key.to_string(),
+            }
+        };
+
+        if let Some(workspace) = state.last_workspace.as_mut() {
+            *workspace = rewrite(workspace, &mut renamed);
+        }
+        for workspace in state.recent_workspaces.iter_mut() {
+            *workspace = rewrite(workspace, &mut renamed);
+        }
+        let favorite_keys: Vec<String> = state.favorites.keys().cloned().collect();
+        for key in &favorite_keys {
+            let new_key = rewrite(key, &mut renamed);
+            if &new_key != key {
+                let entries = state.favorites.remove(key).unwrap_or_default();
+                state.favorites.insert(new_key, entries);
+            }
+        }
+        let appearance_keys: Vec<String> = state.folder_appearances.keys().cloned().collect();
+        for key in &appearance_keys {
+            let new_key = rewrite(key, &mut renamed);
+            if &new_key != key {
+                let entries = state.folder_appearances.remove(key).unwrap_or_default();
+                state.folder_appearances.insert(new_key, entries);
+            }
+        }
+        let cloud_keys: Vec<String> = state.cloud_sync.keys().cloned().collect();
+        for key in &cloud_keys {
+            let new_key = rewrite(key, &mut renamed);
+            if &new_key != key {
+                let profile = state.cloud_sync.remove(key).unwrap_or_default();
+                state.cloud_sync.insert(new_key, profile);
+            }
+        }
+
+        let changed = !renamed.is_empty();
+        for (old_key, new_key) in renamed {
+            self.repository.migrate_workspace_key_hashes(&old_key, &new_key);
+        }
+        Ok(changed)
     }
 
     pub fn save_preferences(
@@ -145,8 +204,37 @@ impl AppStateService {
         Ok(state)
     }
 
-    pub fn skip_update_version(&self, version: String) -> AppResult<AppState> {
-        let canonical = parse_version(&version).map(format_version).ok_or_else(|| {
+    /// Replaces the persisted AI chat sessions wholesale (the frontend owns
+    /// the session list; this only stores what it sends).
+    pub fn save_ai_sessions(
+        &self,
+        sessions: Vec<AiSessionRecord>,
+        active_ai_session_id: Option<String>,
+    ) -> AppResult<AppState> {
+        let _guard = self
+            .state_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut state = self.repository.load_state()?;
+        let mut sessions = sessions;
+        // Sanity caps: keep the newest 100 sessions / 200 messages each.
+        sessions.truncate(100);
+        for session in &mut sessions {
+            if session.messages.len() > 200 {
+                let skip = session.messages.len() - 200;
+                session.messages.drain(..skip);
+            }
+            if session.title.chars().count() > 120 {
+                session.title = session.title.chars().take(120).collect();
+            }
+        }
+        state.ai_sessions = sessions;
+        state.active_ai_session_id = active_ai_session_id;
+        self.repository.save_state(&state)?;
+        Ok(state)
+    }
+
+    pub fn skip_update_version(&self, version: String) -> AppResult<AppState> {        let canonical = parse_version(&version).map(format_version).ok_or_else(|| {
             AppError::new(ErrorCode::Io, "Unable to skip this update version.")
                 .with_details("Version must be major.minor.patch.")
         })?;
@@ -288,6 +376,146 @@ impl AppStateService {
         migrated_keys.sort();
         migrated_keys.dedup();
         Ok(MigrationResult { migrated_keys })
+    }
+
+    pub fn list_note_versions(
+        &self,
+        workspace_root: &str,
+        relative_path: &str,
+    ) -> AppResult<Vec<NoteVersionMeta>> {
+        let normalized =
+            normalize_workspace_key(workspace_root).unwrap_or_else(|_| workspace_root.to_string());
+        let mut versions = self.repository.load_note_versions(&normalized, relative_path)?;
+        if normalized != workspace_root {
+            versions.extend(
+                self.repository
+                    .load_note_versions(workspace_root, relative_path)?,
+            );
+        }
+        versions.sort_by_key(|version| version.created_at);
+        Ok(versions.iter().rev().map(note_version_meta).collect())
+    }
+
+    pub fn get_note_version(
+        &self,
+        workspace_root: &str,
+        relative_path: &str,
+        version_id: &str,
+    ) -> AppResult<NoteVersion> {
+        let normalized =
+            normalize_workspace_key(workspace_root).unwrap_or_else(|_| workspace_root.to_string());
+        let mut versions = self.repository.load_note_versions(&normalized, relative_path)?;
+        if normalized != workspace_root {
+            versions.extend(
+                self.repository
+                    .load_note_versions(workspace_root, relative_path)?,
+            );
+        }
+        versions
+            .into_iter()
+            .find(|version| version.id == version_id)
+            .ok_or_else(|| {
+                AppError::not_found(format!("Note version {version_id} does not exist."))
+            })
+    }
+
+    pub fn snapshot_note_version(
+        &self,
+        workspace_root: &str,
+        relative_path: &str,
+        old_content: &str,
+        new_content: &str,
+        preserve: bool,
+    ) -> AppResult<()> {
+        let normalized =
+            normalize_workspace_key(workspace_root).unwrap_or_else(|_| workspace_root.to_string());
+        let _guard = self
+            .state_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut versions = self.repository.load_note_versions(&normalized, relative_path)?;
+        if versions.is_empty() && normalized != workspace_root {
+            versions = self.repository.load_note_versions(workspace_root, relative_path)?;
+        }
+        versions.sort_by_key(|version| version.created_at);
+        let latest_created_at = versions.last().map(|version| version.created_at);
+        if !should_snapshot_version(
+            latest_created_at,
+            old_content.is_empty(),
+            old_content.len(),
+            new_content.len(),
+            preserve,
+        ) {
+            return Ok(());
+        }
+        let now_ms = current_ms();
+        let created_at = latest_created_at
+            .map(|last| now_ms.max(last + 1))
+            .unwrap_or(now_ms);
+        let id = format!(
+            "v{}",
+            stable_hash(
+                format!("{normalized}:{relative_path}:{created_at}:{}", old_content.len())
+                    .as_bytes()
+            )
+        );
+        versions.push(NoteVersion {
+            id,
+            title: parse_note(old_content, "").title,
+            size: old_content.len() as u64,
+            created_at,
+            content: old_content.to_string(),
+        });
+        self.repository
+            .save_note_versions(&normalized, relative_path, &versions)
+    }
+}
+
+fn current_ms() -> i64 {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default(),
+    )
+    .unwrap_or_default()
+}
+
+/// Mirrors the upstream snapshot policy: record the outgoing content when it
+/// is the note's first version, when the last snapshot is older than five
+/// minutes, or when the edit changes the size by at least 400 characters.
+/// Restores pass `preserve` to force an unconditional snapshot.
+fn should_snapshot_version(
+    latest_created_at: Option<i64>,
+    old_content_empty: bool,
+    old_size: usize,
+    new_size: usize,
+    preserve: bool,
+) -> bool {
+    if old_content_empty {
+        return false;
+    }
+    if preserve {
+        return true;
+    }
+    match latest_created_at {
+        None => true,
+        Some(last) => {
+            current_ms() - last > SNAPSHOT_INTERVAL_MS
+                || (new_size as i64 - old_size as i64).abs() >= SNAPSHOT_DIFF_THRESHOLD as i64
+        }
+    }
+}
+
+const SNAPSHOT_INTERVAL_MS: i64 = 5 * 60 * 1000;
+const SNAPSHOT_DIFF_THRESHOLD: usize = 400;
+
+fn note_version_meta(version: &NoteVersion) -> NoteVersionMeta {
+    NoteVersionMeta {
+        id: version.id.clone(),
+        title: version.title.clone(),
+        size: version.size,
+        created_at: version.created_at,
     }
 }
 

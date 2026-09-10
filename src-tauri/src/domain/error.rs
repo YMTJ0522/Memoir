@@ -50,12 +50,15 @@ impl AppError {
     pub fn unsupported_attachment() -> Self {
         Self::new(
             ErrorCode::UnsupportedExtension,
-            "Only image attachments are supported.",
+            "Unsupported attachment file type.",
         )
     }
 
     pub fn attachment_too_large() -> Self {
-        Self::new(ErrorCode::Io, "Attachment is larger than 20 MB.")
+        Self::new(
+            ErrorCode::Io,
+            "Attachment exceeds its size limit.",
+        )
     }
 
     pub fn not_found(message: impl Into<String>) -> Self {

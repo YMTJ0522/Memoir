@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, ImagePlus, Trash2 } from "lucide-react";
+import { CheckSquare, Copy, ExternalLink, ImagePlus, Trash2 } from "lucide-react";
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from "../../components/ui";
 import type { AttachmentFile } from "../../domain/attachments";
 import { mapGatewayError } from "../../domain/errors";
@@ -34,12 +34,14 @@ export function AttachmentContextMenu({
   onClose,
   onInsert,
   onDelete,
+  onEnterSelectMode,
 }: {
   attachments: AttachmentFile[];
   target: AttachmentMenuTarget | null;
   onClose: () => void;
   onInsert: (attachment: AttachmentFile) => void;
   onDelete: (attachment: AttachmentFile) => void;
+  onEnterSelectMode: () => void;
 }) {
   const workspaceRoot = useAppStore((state) => state.workspaceRoot);
   const attachment = attachments.find((item) => item.relativePath === target?.path);
@@ -78,6 +80,11 @@ export function AttachmentContextMenu({
         }}
       />
       <ContextMenuSeparator />
+      <ContextMenuItem
+        icon={<CheckSquare />}
+        label={t("menu.selectForBatchDelete")}
+        onSelect={onEnterSelectMode}
+      />
       <ContextMenuItem
         danger
         icon={<Trash2 />}

@@ -18,6 +18,31 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--memoir-accent) 16%, transparent);
 }
 
+.attachment-card.is-selected {
+  background: color-mix(in srgb, var(--memoir-accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--memoir-accent) 62%, transparent);
+}
+
+.attachment-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--memoir-text) 34%, transparent);
+  background: color-mix(in srgb, var(--memoir-canvas) 82%, transparent);
+  color: var(--memoir-accent-contrast, #fff);
+  transition: all 150ms var(--memoir-ease);
+}
+
+.attachment-check.is-on {
+  border-color: var(--memoir-accent);
+  background: var(--memoir-accent);
+}
+
 .attachment-thumb {
   display: grid;
   aspect-ratio: 4 / 3;

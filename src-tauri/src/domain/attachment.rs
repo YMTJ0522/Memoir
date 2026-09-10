@@ -1,11 +1,71 @@
 use crate::domain::{AppError, AppResult};
-use std::path::{Component, Path};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fs,
+    io,
+    path::{Component, Path},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub const ATTACHMENTS_DIR: &str = "attachments";
 pub const MAX_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
-pub const ATTACHMENT_EXTENSIONS: [&str; 8] =
+pub const MAX_VIDEO_ATTACHMENT_BYTES: usize = 200 * 1024 * 1024;
+pub const MAX_AUDIO_ATTACHMENT_BYTES: usize = 100 * 1024 * 1024;
+/// Documents and archives stream from disk on import, so the cap only guards
+/// against absurd files — two gigabytes keeps large project archives usable
+/// without a meaningful memory footprint.
+pub const MAX_LARGE_ATTACHMENT_BYTES: usize = 2 * 1024 * 1024 * 1024;
+pub const IMAGE_EXTENSIONS: [&str; 8] =
     ["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg"];
+pub const VIDEO_EXTENSIONS: [&str; 7] =
+    ["mp4", "webm", "mov", "m4v", "avi", "mkv", "wmv"];
+pub const AUDIO_EXTENSIONS: [&str; 5] = ["mp3", "wav", "ogg", "m4a", "flac"];
+pub const DOCUMENT_EXTENSIONS: [&str; 15] = [
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "md", //
+    "rtf", "odt", "ods", "odp", "epub",
+];
+pub const ARCHIVE_EXTENSIONS: [&str; 8] =
+    ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz"];
+pub const ATTACHMENT_EXTENSIONS: [&str; 43] = [
+    // images
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg", //
+    // videos
+    "mp4", "webm", "mov", "m4v", "avi", "mkv", "wmv", //
+    // audio
+    "mp3", "wav", "ogg", "m4a", "flac", //
+    // documents
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "md", //
+    "rtf", "odt", "ods", "odp", "epub", //
+    // archives
+    "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz",
+];
+
+pub fn is_video_extension(extension: &str) -> bool {
+    VIDEO_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+}
+
+pub fn is_audio_extension(extension: &str) -> bool {
+    AUDIO_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+}
+
+pub fn is_document_extension(extension: &str) -> bool {
+    DOCUMENT_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+}
+
+pub fn is_archive_extension(extension: &str) -> bool {
+    ARCHIVE_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+}
+
+pub fn max_attachment_bytes_for_extension(extension: &str) -> usize {
+    if is_video_extension(extension) {
+        MAX_VIDEO_ATTACHMENT_BYTES
+    } else if is_audio_extension(extension) {
+        MAX_AUDIO_ATTACHMENT_BYTES
+    } else if is_document_extension(extension) || is_archive_extension(extension) {
+        MAX_LARGE_ATTACHMENT_BYTES
+    } else {
+        MAX_ATTACHMENT_BYTES
+    }
+}
 
 pub fn is_attachment_extension(extension: &str) -> bool {
     ATTACHMENT_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
@@ -72,6 +132,39 @@ pub fn mime_from_extension(extension: &str) -> &'static str {
         "bmp" => "image/bmp",
         "avif" => "image/avif",
         "svg" => "image/svg+xml",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "m4v" => "video/x-m4v",
+        "avi" => "video/x-msvideo",
+        "mkv" => "video/x-matroska",
+        "wmv" => "video/x-ms-wmv",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "flac" => "audio/flac",
+        "pdf" => "application/pdf",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "txt" | "csv" | "md" => "text/plain",
+        "rtf" => "application/rtf",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        "odp" => "application/vnd.oasis.opendocument.presentation",
+        "epub" => "application/epub+zip",
+        "zip" => "application/zip",
+        "rar" => "application/vnd.rar",
+        "7z" => "application/x-7z-compressed",
+        "tar" => "application/x-tar",
+        "gz" => "application/gzip",
+        "tgz" => "application/gzip",
+        "bz2" => "application/x-bzip2",
+        "xz" => "application/x-xz",
         _ => "application/octet-stream",
     }
 }
@@ -85,6 +178,42 @@ pub fn extension_from_mime(mime: &str) -> Option<&'static str> {
         "image/bmp" | "image/x-ms-bmp" => Some("bmp"),
         "image/avif" => Some("avif"),
         "image/svg+xml" => Some("svg"),
+        "video/mp4" => Some("mp4"),
+        "video/webm" => Some("webm"),
+        "video/quicktime" => Some("mov"),
+        "video/x-m4v" => Some("m4v"),
+        "video/x-msvideo" | "video/avi" => Some("avi"),
+        "video/x-matroska" => Some("mkv"),
+        "video/x-ms-wmv" => Some("wmv"),
+        "audio/mpeg" | "audio/mp3" => Some("mp3"),
+        "audio/wav" | "audio/x-wav" => Some("wav"),
+        "audio/ogg" => Some("ogg"),
+        "audio/mp4" | "audio/x-m4a" => Some("m4a"),
+        "audio/flac" => Some("flac"),
+        "application/pdf" => Some("pdf"),
+        "application/msword" => Some("doc"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => Some("docx"),
+        "application/vnd.ms-excel" => Some("xls"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
+        "application/vnd.ms-powerpoint" => Some("ppt"),
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => Some("pptx"),
+        "text/plain" => Some("txt"),
+        "text/csv" => Some("csv"),
+        "text/markdown" => Some("md"),
+        "application/rtf" => Some("rtf"),
+        "application/vnd.oasis.opendocument.text" => Some("odt"),
+        "application/vnd.oasis.opendocument.spreadsheet" => Some("ods"),
+        "application/vnd.oasis.opendocument.presentation" => Some("odp"),
+        "application/epub+zip" => Some("epub"),
+        "application/zip" => Some("zip"),
+        "application/x-zip-compressed" => Some("zip"),
+        "application/vnd.rar" => Some("rar"),
+        "application/x-7z-compressed" => Some("7z"),
+        "application/x-tar" => Some("tar"),
+        "application/gzip" => Some("gz"),
+        "application/x-gzip" => Some("gz"),
+        "application/x-bzip2" => Some("bz2"),
+        "application/x-xz" => Some("xz"),
         _ => None,
     }
 }
@@ -155,28 +284,73 @@ pub fn resolve_attachment_extension(
     mime_type: Option<&str>,
     bytes: &[u8],
 ) -> AppResult<String> {
-    if bytes.len() > MAX_ATTACHMENT_BYTES {
-        return Err(AppError::attachment_too_large());
-    }
-    if bytes.is_empty() {
-        return Err(AppError::unsupported_attachment());
-    }
-    let sniffed = sniff_image_extension(bytes);
     let named = file_name
         .and_then(|name| Path::new(name).extension())
         .and_then(|value| value.to_str())
         .map(|value| value.to_ascii_lowercase())
         .filter(|value| is_attachment_extension(value));
-    let mimed = mime_type.and_then(extension_from_mime).map(str::to_string);
-    let extension = sniffed
+    let mimed = mime_type
+        .and_then(extension_from_mime)
+        .map(str::to_string);
+    let extension = sniff_image_extension(bytes)
         .map(str::to_string)
         .or(named)
         .or(mimed)
         .ok_or_else(AppError::unsupported_attachment)?;
+    // Video files have no image magic bytes; their declared extension is the
+    // source of truth, so size checks happen after the extension is settled.
+    if bytes.len() > max_attachment_bytes_for_extension(&extension) {
+        return Err(AppError::attachment_too_large());
+    }
+    if bytes.is_empty() {
+        return Err(AppError::unsupported_attachment());
+    }
     if extension == "svg" && !looks_like_svg(bytes) {
         return Err(AppError::unsupported_attachment());
     }
     Ok(extension)
+}
+
+/// Streaming counterpart of `resolve_attachment_extension` for imports: the
+/// file name settles the extension, and only the first 512 bytes are read
+/// for the SVG sanity check, so a multi-gigabyte import never loads the
+/// whole file into memory. The consumed header bytes are handed back so the
+/// caller can chain them in front of the rest of the stream.
+pub fn validate_attachment_import(
+    file_name: Option<&str>,
+    metadata: &fs::Metadata,
+    reader: &mut impl io::Read,
+) -> AppResult<(String, Vec<u8>)> {
+    let extension = file_name
+        .and_then(|name| Path::new(name).extension())
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .filter(|value| is_attachment_extension(value))
+        .ok_or_else(AppError::unsupported_attachment)?;
+    if metadata.len() > max_attachment_bytes_for_extension(&extension) as u64 {
+        return Err(AppError::attachment_too_large());
+    }
+    if metadata.len() == 0 {
+        return Err(AppError::unsupported_attachment());
+    }
+    let mut header = [0_u8; 512];
+    let mut read = 0;
+    while read < header.len() {
+        match reader.read(&mut header[read..]) {
+            Ok(0) => break,
+            Ok(count) => read += count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err(AppError::unsupported_attachment()),
+        }
+    }
+    // Empty files slip past the metadata length check on some filesystems.
+    if read == 0 {
+        return Err(AppError::unsupported_attachment());
+    }
+    if extension == "svg" && !looks_like_svg(&header[..read]) {
+        return Err(AppError::unsupported_attachment());
+    }
+    Ok((extension, header[..read].to_vec()))
 }
 
 pub fn unique_file_name(preferred: &str, existing: impl Fn(&str) -> bool) -> String {

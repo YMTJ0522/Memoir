@@ -117,7 +117,7 @@ export function NoteOutline({
   return (
     <nav
       aria-label={t("outline.label")}
-      className="outline-list memoir-fade-in flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto"
+      className="outline-list memoir-panel-in flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto"
     >
       <div className="outline-items">
         {visibleNodes.map((node) => {

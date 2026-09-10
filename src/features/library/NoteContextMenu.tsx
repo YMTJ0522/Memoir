@@ -1,5 +1,15 @@
-import { Copy, ExternalLink, FileDown, FileText, PencilLine, Star, Trash2 } from "lucide-react";
-import { exportNotePdf } from "../export/export-note-pdf";
+import {
+  Copy,
+  ExternalLink,
+  FileDown,
+  FileText,
+  FileType,
+  Globe,
+  PencilLine,
+  Star,
+  Trash2,
+} from "lucide-react";
+import { exportNote } from "../export/export-note";
 import {
   ContextMenu,
   ContextMenuItem,
@@ -97,7 +107,22 @@ export function NoteContextMenu({
       <ContextMenuItem
         icon={<FileDown />}
         label={t("menu.exportPdf")}
-        onSelect={() => void exportNotePdf(note.relativePath)}
+        onSelect={() => void exportNote(note.relativePath, "pdf")}
+      />
+      <ContextMenuItem
+        icon={<Globe />}
+        label={t("menu.exportHtml")}
+        onSelect={() => void exportNote(note.relativePath, "html")}
+      />
+      <ContextMenuItem
+        icon={<FileText />}
+        label={t("menu.exportMarkdown")}
+        onSelect={() => void exportNote(note.relativePath, "markdown")}
+      />
+      <ContextMenuItem
+        icon={<FileType />}
+        label={t("menu.exportWord")}
+        onSelect={() => void exportNote(note.relativePath, "word")}
       />
       <ContextMenuSeparator />
       <ContextMenuItem

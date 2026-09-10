@@ -30,8 +30,15 @@ pub fn normalize_root(root: &str) -> AppResult<PathBuf> {
     if !path.is_dir() {
         return Err(AppError::invalid_path("Workspace path is not a directory."));
     }
-    path.canonicalize()
-        .map_err(|error| AppError::io("Open workspace", &path, error))
+    // Windows canonicalize() returns verbatim paths (\\?\C:\...). Strip that
+    // prefix so paths returned to the frontend stay human-readable and the
+    // asset protocol can resolve workspace media correctly.
+    Ok(dunce::simplified(
+        &path
+            .canonicalize()
+            .map_err(|error| AppError::io("Open workspace", &path, error))?,
+    )
+    .to_path_buf())
 }
 
 pub fn normalize_workspace_key(root: &str) -> AppResult<String> {
@@ -149,7 +156,7 @@ pub fn validate_nearest_existing_parent(root: &Path, target: &Path) -> AppResult
 }
 
 pub fn ensure_inside(root: &Path, path: &Path) -> AppResult<()> {
-    if path.starts_with(root) {
+    if paths_equivalent(root, path) {
         Ok(())
     } else {
         Err(AppError::invalid_path(
@@ -158,10 +165,51 @@ pub fn ensure_inside(root: &Path, path: &Path) -> AppResult<()> {
     }
 }
 
+/// Compare paths tolerantly: case-insensitive on Windows (drive letters and
+/// user input differ in case) and ignoring the Windows verbatim prefix so
+/// legacy `\\?\C:\...` keys still resolve to the same workspace.
+fn paths_equivalent(root: &Path, path: &Path) -> bool {
+    let root = strip_verbatim_prefix(root);
+    let path = strip_verbatim_prefix(path);
+    #[cfg(windows)]
+    {
+        path.starts_with(&root)
+            || path
+                .to_string_lossy()
+                .to_lowercase()
+                .starts_with(&root.to_string_lossy().to_lowercase())
+    }
+    #[cfg(not(windows))]
+    {
+        path.starts_with(&root)
+    }
+}
+
 pub fn to_relative_path(root: &Path, path: &Path) -> AppResult<String> {
-    path.strip_prefix(root)
-        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
-        .map_err(|_| AppError::invalid_path("File is outside the workspace."))
+    let root = strip_verbatim_prefix(root);
+    let path = strip_verbatim_prefix(path);
+    let relative = path
+        .strip_prefix(&root)
+        .ok()
+        .map(|value| value.to_string_lossy().to_string())
+        .or_else(|| {
+            // Windows is case-insensitive; fall back to a lowercase comparison.
+            let path_text = path.to_string_lossy().to_lowercase();
+            let root_text = root.to_string_lossy().to_lowercase();
+            path_text
+                .strip_prefix(&root_text)
+                .map(|tail| tail.trim_start_matches(['\\', '/']).to_string())
+        })
+        .ok_or_else(|| AppError::invalid_path("File is outside the workspace."))?;
+    Ok(relative.replace('\\', "/"))
+}
+
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.as_os_str().to_string_lossy().to_string();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => path.to_path_buf(),
+    }
 }
 
 pub fn should_skip_dir(path: &Path) -> bool {

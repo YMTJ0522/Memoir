@@ -26,7 +26,7 @@ export function NoteLinksPanel() {
   }
 
   return (
-    <div className="note-links-panel memoir-fade-in flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-4 pt-2.5">
+    <div className="note-links-panel memoir-panel-in flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-4 pt-2.5">
       <LinkSection
         empty={t("links.emptyOutgoing")}
         icon={<ArrowUpRight className="h-3.5 w-3.5" />}

@@ -90,7 +90,7 @@ export function IndexInspector() {
   const timestamp = (ms: number) => (ms ? formatRelativeTime(ms, locale) : t("library.indexNever"));
 
   return (
-    <div className="index-inspector memoir-fade-in flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-4 pt-2.5">
+    <div className="index-inspector memoir-panel-in flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-4 pt-2.5">
       {busy && !info ? (
         <div className="grid flex-1 place-items-center text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />

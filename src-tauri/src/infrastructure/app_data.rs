@@ -1,7 +1,7 @@
 use crate::{
     domain::{
         cloud_sync::{SyncSnapshot, CLOUD_SYNC_SNAPSHOT_VERSION},
-        AppError, AppResult, AppState, LegacyDraft, APP_STATE_VERSION,
+        AppError, AppResult, AppState, LegacyDraft, NoteVersion, APP_STATE_VERSION, MAX_VERSIONS_PER_NOTE,
     },
     infrastructure::atomic::atomic_write,
 };
@@ -176,6 +176,74 @@ impl AppDataRepository {
             .join("sync")
             .join(stable_hash(workspace_root.as_bytes()))
             .join("snapshot.json")
+    }
+
+    /// Loads every recorded version of a note, oldest entry first.
+    pub fn load_note_versions(
+        &self,
+        workspace_root: &str,
+        relative_path: &str,
+    ) -> AppResult<Vec<NoteVersion>> {
+        let path = self.versions_path(workspace_root, relative_path);
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let bytes =
+            fs::read(&path).map_err(|error| AppError::io("Read note versions", &path, error))?;
+        let versions: Vec<NoteVersion> =
+            serde_json::from_slice(&bytes).map_err(AppError::serialization)?;
+        Ok(versions)
+    }
+
+    /// Persists the version list of a note, trimming the oldest entries so at
+    /// most [`MAX_VERSIONS_PER_NOTE`] snapshots are kept. An empty list
+    /// removes the stored file entirely.
+    pub fn save_note_versions(
+        &self,
+        workspace_root: &str,
+        relative_path: &str,
+        versions: &[NoteVersion],
+    ) -> AppResult<()> {
+        let mut versions = versions.to_vec();
+        let overflow = versions.len().saturating_sub(MAX_VERSIONS_PER_NOTE);
+        if overflow > 0 {
+            versions.drain(..overflow);
+        }
+        let path = self.versions_path(workspace_root, relative_path);
+        if versions.is_empty() {
+            if path.exists() {
+                fs::remove_file(&path)
+                    .map_err(|error| AppError::io("Delete note versions", &path, error))?;
+            }
+            return Ok(());
+        }
+        let bytes = serde_json::to_vec_pretty(&versions).map_err(AppError::serialization)?;
+        atomic_write(&path, &bytes)
+    }
+
+    fn versions_path(&self, workspace_root: &str, relative_path: &str) -> PathBuf {
+        let workspace_hash = stable_hash(workspace_root.as_bytes());
+        let note_hash = stable_hash(relative_path.as_bytes());
+        self.root
+            .join("versions")
+            .join(workspace_hash)
+            .join(format!("{note_hash}.json"))
+    }
+
+    /// Drafts, versions, and sync snapshots are stored under SHA-256 hashes
+    /// of the workspace key. When a legacy verbatim key (`\\?\C:\...`) is
+    /// migrated to its plain form, move the hashed directories so existing
+    /// drafts, favorites metadata, and sync state keep working.
+    pub fn migrate_workspace_key_hashes(&self, old_key: &str, new_key: &str) {
+        let old_hash = stable_hash(old_key.as_bytes());
+        let new_hash = stable_hash(new_key.as_bytes());
+        for dir_name in ["drafts", "sync", "versions"] {
+            let source = self.root.join(dir_name).join(&old_hash);
+            let target = self.root.join(dir_name).join(&new_hash);
+            if source.is_dir() && !target.exists() {
+                let _ = fs::rename(&source, &target);
+            }
+        }
     }
 
     pub fn write_legacy_draft(&self, draft: &LegacyDraft) -> AppResult<()> {

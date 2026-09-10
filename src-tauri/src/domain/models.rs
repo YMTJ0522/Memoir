@@ -24,6 +24,12 @@ pub struct NoteFile {
     pub title: String,
     pub tags: Vec<String>,
     pub excerpt: String,
+    /// Full note body (frontmatter stripped); included for search results.
+    #[serde(default)]
+    pub body: String,
+    /// Search-hit context snippet, only populated when a query matched the body.
+    #[serde(default)]
+    pub snippet: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -228,6 +234,31 @@ impl Default for GeneralSettings {
     }
 }
 
+/// OpenAI-compatible chat settings (豆包 / DeepSeek / Kimi / 通义 / OpenAI).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub model: String,
+}
+
+impl Default for AiSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: String::new(),
+            api_key: String::new(),
+            model: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct AppSettings {
     #[serde(default)]
@@ -236,6 +267,8 @@ pub struct AppSettings {
     pub editor: EditorSettings,
     #[serde(default)]
     pub general: GeneralSettings,
+    #[serde(default)]
+    pub ai: AiSettings,
 }
 
 impl AppSettings {
@@ -407,6 +440,33 @@ pub struct AppState {
     pub window: WindowFrameState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skipped_update_version: Option<String>,
+    /// Persisted AI chat sessions (chat history survives restarts).
+    #[serde(default)]
+    pub ai_sessions: Vec<AiSessionRecord>,
+    #[serde(default)]
+    pub active_ai_session_id: Option<String>,
+}
+
+/// One persisted AI chat session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSessionRecord {
+    pub id: String,
+    pub title: String,
+    pub created_at: i64,
+    #[serde(default)]
+    pub messages: Vec<AiMessageRecord>,
+}
+
+/// One message inside a persisted AI chat session.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiMessageRecord {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    #[serde(default)]
+    pub reasoning: Option<String>,
 }
 
 fn default_version() -> u32 {
@@ -427,6 +487,8 @@ impl Default for AppState {
             cloud_sync: BTreeMap::new(),
             window: WindowFrameState::default(),
             skipped_update_version: None,
+            ai_sessions: Vec::new(),
+            active_ai_session_id: None,
         }
     }
 }
@@ -455,4 +517,28 @@ pub struct LegacyStatePayload {
 #[serde(rename_all = "camelCase")]
 pub struct MigrationResult {
     pub migrated_keys: Vec<String>,
+}
+
+pub const MAX_VERSIONS_PER_NOTE: usize = 50;
+
+/// Snapshot of a note's content at a point in time. Persisted as JSON under
+/// the app-data directory and returned by the version commands.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteVersion {
+    pub id: String,
+    pub title: String,
+    pub size: u64,
+    pub created_at: i64,
+    pub content: String,
+}
+
+/// Listing projection of [`NoteVersion`] without the full content payload.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteVersionMeta {
+    pub id: String,
+    pub title: String,
+    pub size: u64,
+    pub created_at: i64,
 }
