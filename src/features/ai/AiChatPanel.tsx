@@ -17,6 +17,7 @@ import {
   Trash2,
   TriangleAlert,
   WandSparkles,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getGateways } from "../../gateways";
@@ -33,6 +34,8 @@ import { Button, IconButton, Select, Toggle } from "../../components/ui";
 const MAX_NOTE_CONTEXT_CHARS = 30_000;
 const SYSTEM_ROLE = `你是用户的 AI 写作助手。请始终使用简体中文回复，语气自然专业。
 不要自称"豆包""DeepSeek""Kimi"或其他任何模型/厂商名称，直接以助手身份回答问题即可。`;
+
+const NEW_SESSION_VALUE = "__new__";
 
 type ChatMessage = AiChatMessage;
 
@@ -59,7 +62,7 @@ type QuickCommandIcon =
   | "tags"
   | "polish";
 
-/** Pre-built quick commands shown above the composer. */
+/** Pre-built quick commands shown in the empty state. */
 const QUICK_COMMANDS: Array<{
   key: MessageKey;
   icon: QuickCommandIcon;
@@ -111,6 +114,28 @@ export default function AiChatPanel({ className }: { className?: string }) {
     [aiSessions, activeAiSessionId],
   );
   const messages = activeSession?.messages ?? [];
+
+  /** id of the newest completed assistant message, used for the regenerate button. */
+  const lastDoneAssistantId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === "assistant" && message.status !== "loading" && message.status !== "error") {
+        return message.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const sessionOptions = useMemo(
+    () => [
+      { value: NEW_SESSION_VALUE, label: `✦ ${t("ai.newChat")}` },
+      ...aiSessions.map((session) => ({
+        value: session.id,
+        label: session.title || t("ai.newChat"),
+      })),
+    ],
+    [aiSessions, t],
+  );
 
   useEffect(() => {
     const list = listRef.current;
@@ -250,6 +275,22 @@ export default function AiChatPanel({ className }: { className?: string }) {
     await send(errorUserMessage.content);
   };
 
+  /** Drop the last exchange and ask the same question again. */
+  const regenerateLast = async () => {
+    if (!activeSession || isSending) return;
+    let lastUserIndex = -1;
+    for (let index = activeSession.messages.length - 1; index >= 0; index -= 1) {
+      if (activeSession.messages[index].role === "user") {
+        lastUserIndex = index;
+        break;
+      }
+    }
+    if (lastUserIndex < 0) return;
+    const lastUserMessage = activeSession.messages[lastUserIndex];
+    updateAiSession(activeSession.id, { messages: activeSession.messages.slice(0, lastUserIndex) });
+    await send(lastUserMessage.content);
+  };
+
   const copyMessage = async (message: ChatMessage) => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -271,7 +312,6 @@ export default function AiChatPanel({ className }: { className?: string }) {
       () => setInsertedId((current) => (current === message.id ? null : current)),
       1600,
     );
-    setLibraryPanelMode("notes");
   };
 
   const insertAsNewNote = async (message: ChatMessage) => {
@@ -286,7 +326,6 @@ export default function AiChatPanel({ className }: { className?: string }) {
         () => setInsertAsNoteId((current) => (current === message.id ? null : current)),
         1600,
       );
-      setLibraryPanelMode("notes");
     } catch {
       // createNote already surfaces an error via the store error state
     }
@@ -297,12 +336,20 @@ export default function AiChatPanel({ className }: { className?: string }) {
     setDraft("");
   };
 
+  const closePanel = () => {
+    setLibraryPanelMode("notes");
+  };
+
+  const handleSessionSelect = (value: string) => {
+    if (value === NEW_SESSION_VALUE) {
+      startNewChat();
+      return;
+    }
+    selectAiSession(value);
+  };
+
   const handleSwitchNote = (relativePath: string) => {
-    void selectNote(relativePath).then(() => {
-      // Keep the AI panel open after switching notes (selectNote resets the
-      // mobile panel, so re-assert the desktop library panel mode).
-      setLibraryPanelMode("ai");
-    });
+    void selectNote(relativePath);
   };
 
   const handleDeleteSession = (session: AiSession) => {
@@ -330,18 +377,33 @@ export default function AiChatPanel({ className }: { className?: string }) {
     <section aria-label={t("ai.panelTitle")} className={className}>
       <div className="ai-chat-panel flex h-full min-h-0 flex-col bg-canvas">
         <header
-          className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4"
+          className="flex h-12 shrink-0 items-center gap-1.5 border-b border-border pl-3 pr-2"
           data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
           onMouseDown={handleWindowDragMouseDown}
         >
-          <Sparkles className="h-4 w-4 text-accent" aria-hidden strokeWidth={1.8} />
-          <h2 className="text-[14px] font-semibold text-text">{t("ai.panelTitle")}</h2>
-          <IconButton
-            className="ml-auto h-7 w-7"
-            label={t("ai.newChat")}
-            onClick={startNewChat}
-          >
+          <Sparkles className="h-4 w-4 shrink-0 text-accent" aria-hidden strokeWidth={1.8} />
+          <h2 className="shrink-0 text-[13.5px] font-semibold text-text">{t("ai.panelTitle")}</h2>
+          <Select
+            className="ai-session-picker ml-auto min-w-0"
+            label={t("ai.sessionSelect")}
+            onChange={handleSessionSelect}
+            options={sessionOptions}
+            value={activeAiSessionId ?? NEW_SESSION_VALUE}
+          />
+          {activeSession && aiSessions.length > 0 && (
+            <IconButton
+              className="h-7 w-7"
+              label={t("ai.sessionDelete")}
+              onClick={() => handleDeleteSession(activeSession)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </IconButton>
+          )}
+          <IconButton className="h-7 w-7" label={t("ai.newChat")} onClick={startNewChat}>
             <MessageSquarePlus className="h-4 w-4" />
+          </IconButton>
+          <IconButton className="h-7 w-7" label={t("ai.closePanel")} onClick={closePanel}>
+            <X className="h-4 w-4" />
           </IconButton>
         </header>
 
@@ -360,283 +422,234 @@ export default function AiChatPanel({ className }: { className?: string }) {
             </div>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1">
-            {/* Left session rail */}
-            <aside className="ai-session-rail flex w-52 shrink-0 flex-col border-r border-border bg-panel">
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  {t("ai.sessions")}
-                </span>
-                <IconButton
-                  className="h-6 w-6"
-                  label={t("ai.newChat")}
-                  onClick={startNewChat}
-                >
-                  <MessageSquarePlus className="h-3.5 w-3.5" />
-                </IconButton>
-              </div>
-              <div className="ai-session-list min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-                {aiSessions.length === 0 ? (
-                  <p className="px-2 py-3 text-center text-[12px] text-muted">
-                    {t("ai.sessionEmpty")}
-                  </p>
-                ) : (
-                  <ul className="space-y-0.5">
-                    {aiSessions.map((session) => (
-                      <li
-                        className={
-                          session.id === activeAiSessionId
-                            ? "ai-session-item is-active"
-                            : "ai-session-item"
-                        }
-                        key={session.id}
-                      >
-                        <button
-                          aria-label={t("ai.sessionSelect")}
-                          className="ai-session-item-main"
-                          onClick={() => selectAiSession(session.id)}
-                          title={session.title}
-                          type="button"
-                        >
-                          <span className="min-w-0 flex-1 truncate">
-                            {session.title || t("ai.newChat")}
-                          </span>
-                          <span className="ai-session-item-count">
-                            {session.messages.filter((item) => item.role === "user").length}
-                          </span>
-                        </button>
-                        <button
-                          aria-label={t("ai.sessionDelete")}
-                          className="ai-session-item-delete"
-                          onClick={() => handleDeleteSession(session)}
-                          type="button"
-                        >
-                          <Trash2 className="h-3 w-3" aria-hidden />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </aside>
-
-            {/* Right chat column */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-4">
-                <Toggle
-                  checked={useNoteContext}
-                  label={t("ai.useNoteContext")}
-                  onChange={setUseNoteContext}
+          <>
+            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+              <Toggle
+                checked={useNoteContext}
+                label={t("ai.useNoteContext")}
+                onChange={setUseNoteContext}
+              />
+              {useNoteContext && activeNote && (
+                <Select
+                  className="ai-note-picker ml-auto min-w-0"
+                  label={t("ai.notePicker")}
+                  onChange={(value) => handleSwitchNote(value)}
+                  options={notes.map((note) => ({
+                    value: note.relativePath,
+                    label: note.title || note.fileName,
+                  }))}
+                  value={activeNote.relativePath}
                 />
-                {useNoteContext && activeNote && (
-                  <Select
-                    className="ai-note-picker ml-auto max-w-56 min-w-0"
-                    label={t("ai.notePicker")}
-                    onChange={(value) => handleSwitchNote(value)}
-                    options={notes.map((note) => ({
-                      value: note.relativePath,
-                      label: note.title || note.fileName,
-                    }))}
-                    value={activeNote.relativePath}
-                  />
-                )}
-              </div>
+              )}
+            </div>
 
-              <div
-                className="ai-chat-messages min-h-0 flex-1 overflow-y-auto px-4 py-4"
-                ref={listRef}
-              >
-                {messages.length === 0 ? (
-                  <div className="mx-auto max-w-md pt-8 text-center">
-                    <Sparkles
-                      className="mx-auto mb-3 h-7 w-7 text-muted"
-                      aria-hidden
-                      strokeWidth={1.5}
-                    />
-                    <p className="text-[13px] leading-6 text-muted">{t("ai.emptyHint")}</p>
+            <div
+              className="ai-chat-messages min-h-0 flex-1 overflow-y-auto px-3 py-4"
+              ref={listRef}
+            >
+              {messages.length === 0 ? (
+                <div className="ai-empty-state mx-auto flex h-full max-w-sm flex-col items-center justify-center text-center">
+                  <div className="ai-empty-badge">
+                    <Sparkles aria-hidden strokeWidth={1.6} />
                   </div>
-                ) : (
-                  <div className="mx-auto flex max-w-2xl flex-col gap-4">
-                    {messages.map((message) => (
-                      <div
-                        className={
-                          message.role === "user" ? "ai-bubble-row is-user" : "ai-bubble-row"
-                        }
-                        key={message.id}
-                      >
-                        <div
-                          className={
-                            message.role === "user" ? "ai-bubble is-user" : "ai-bubble is-assistant"
-                          }
-                        >
-                          {message.status === "loading" ? (
-                            <span aria-label={t("ai.thinking")} className="ai-typing">
-                              <i />
-                              <i />
-                              <i />
-                            </span>
-                          ) : message.status === "error" ? (
-                            <div className="ai-error">
-                              <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />
-                              <div className="min-w-0">
-                                <p>{t("ai.requestFailed")}</p>
-                                <p className="ai-error-details">{message.error}</p>
-                                <button
-                                  className="ai-retry-button"
-                                  onClick={() => void retry()}
-                                  type="button"
-                                >
-                                  <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-                                  {t("ai.retry")}
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              {message.reasoning ? (
-                                <div className="ai-reasoning-block">
-                                  <button
-                                    className="ai-reasoning-toggle"
-                                    onClick={() => toggleReasoning(message.id)}
-                                    type="button"
-                                  >
-                                    {expandedReasoningIds.has(message.id) ? (
-                                      <ChevronDown className="h-3.5 w-3.5" aria-hidden />
-                                    ) : (
-                                      <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-                                    )}
-                                    <Bot className="h-3.5 w-3.5" aria-hidden />
-                                    <span>{t("ai.thinkingLabel")}</span>
-                                  </button>
-                                  {expandedReasoningIds.has(message.id) && (
-                                    <pre className="ai-reasoning-body">{message.reasoning}</pre>
-                                  )}
-                                </div>
-                              ) : null}
-                              <div
-                                className="ai-markdown"
-                                dangerouslySetInnerHTML={{
-                                  __html: renderMarkdownLite(message.content),
-                                }}
-                              />
-                              {message.role === "assistant" && (
-                                <div className="ai-bubble-actions">
-                                  <button
-                                    aria-label={
-                                      copiedId === message.id ? t("ai.copied") : t("ai.copy")
-                                    }
-                                    className="ai-action-button"
-                                    onClick={() => void copyMessage(message)}
-                                    title={t("ai.copy")}
-                                    type="button"
-                                  >
-                                    {copiedId === message.id ? (
-                                      <Check className="h-3.5 w-3.5" aria-hidden />
-                                    ) : (
-                                      <Copy className="h-3.5 w-3.5" aria-hidden />
-                                    )}
-                                  </button>
-                                  {activePath && (
-                                    <button
-                                      aria-label={
-                                        insertedId === message.id
-                                          ? t("ai.inserted")
-                                          : t("ai.insert")
-                                      }
-                                      className="ai-action-button"
-                                      onClick={() => insertIntoNote(message)}
-                                      title={t("ai.insert")}
-                                      type="button"
-                                    >
-                                      {insertedId === message.id ? (
-                                        <Check className="h-3.5 w-3.5" aria-hidden />
-                                      ) : (
-                                        <FileText className="h-3.5 w-3.5" aria-hidden />
-                                      )}
-                                    </button>
-                                  )}
-                                  <button
-                                    aria-label={
-                                      insertAsNoteId === message.id
-                                        ? t("ai.insertAsNoteDone")
-                                        : t("ai.insertAsNote")
-                                    }
-                                    className="ai-action-button"
-                                    onClick={() => void insertAsNewNote(message)}
-                                    title={t("ai.insertAsNote")}
-                                    type="button"
-                                  >
-                                    {insertAsNoteId === message.id ? (
-                                      <Check className="h-3.5 w-3.5" aria-hidden />
-                                    ) : (
-                                      <FilePlus2 className="h-3.5 w-3.5" aria-hidden />
-                                    )}
-                                  </button>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="ai-composer shrink-0 border-t border-border p-3">
-                <div className="mx-auto max-w-2xl">
+                  <h3 className="mt-4 text-[14.5px] font-semibold text-text">
+                    {t("ai.emptyTitle")}
+                  </h3>
+                  <p className="mt-1.5 text-[12.5px] leading-6 text-muted">{t("ai.emptyHint")}</p>
                   {activeNote && useNoteContext && (
-                    <div className="ai-quick-commands mb-2 flex flex-wrap gap-1.5">
+                    <div className="ai-quick-grid mt-5 grid w-full grid-cols-2 gap-2">
                       {QUICK_COMMANDS.map((command) => (
                         <button
-                          className="ai-quick-chip"
+                          className="ai-quick-tile"
                           disabled={isSending}
                           key={command.key}
                           onClick={() => applyQuickCommand(command.prompt)}
                           type="button"
                         >
                           <QuickIcon kind={command.icon} />
-                          {t(command.key)}
+                          <span className="min-w-0 truncate">{t(command.key)}</span>
                         </button>
                       ))}
                     </div>
                   )}
-                  <textarea
-                    aria-label={t("ai.inputPlaceholder")}
-                    className="ai-composer-input"
-                    disabled={isSending}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (
-                        event.key === "Enter" &&
-                        !event.shiftKey &&
-                        !event.nativeEvent.isComposing
-                      ) {
-                        event.preventDefault();
-                        void send(draft);
-                      }
-                    }}
-                    placeholder={t("ai.inputPlaceholder")}
-                    rows={3}
-                    value={draft}
-                  />
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-[11px] text-muted">{t("ai.enterHint")}</span>
-                    <Button
-                      aria-label={t("ai.send")}
-                      className="h-8 w-8"
-                      disabled={!draft.trim() || isSending}
-                      onClick={() => void send(draft)}
-                      size="icon"
-                      variant="primary"
-                    >
-                      <ArrowUp className="h-4 w-4" />
-                    </Button>
-                  </div>
                 </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {messages.map((message) => (
+                    <div
+                      className={
+                        message.role === "user" ? "ai-bubble-row is-user" : "ai-bubble-row"
+                      }
+                      key={message.id}
+                    >
+                      <div
+                        className={
+                          message.role === "user" ? "ai-bubble is-user" : "ai-bubble is-assistant"
+                        }
+                      >
+                        {message.status === "loading" ? (
+                          <span aria-label={t("ai.thinking")} className="ai-typing">
+                            <i />
+                            <i />
+                            <i />
+                          </span>
+                        ) : message.status === "error" ? (
+                          <div className="ai-error">
+                            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />
+                            <div className="min-w-0">
+                              <p>{t("ai.requestFailed")}</p>
+                              <p className="ai-error-details">{message.error}</p>
+                              <button
+                                className="ai-retry-button"
+                                onClick={() => void retry()}
+                                type="button"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                                {t("ai.retry")}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {message.reasoning ? (
+                              <div className="ai-reasoning-block">
+                                <button
+                                  className="ai-reasoning-toggle"
+                                  onClick={() => toggleReasoning(message.id)}
+                                  type="button"
+                                >
+                                  {expandedReasoningIds.has(message.id) ? (
+                                    <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                                  )}
+                                  <Bot className="h-3.5 w-3.5" aria-hidden />
+                                  <span>{t("ai.thinkingLabel")}</span>
+                                </button>
+                                {expandedReasoningIds.has(message.id) && (
+                                  <pre className="ai-reasoning-body">{message.reasoning}</pre>
+                                )}
+                              </div>
+                            ) : null}
+                            <div
+                              className="ai-markdown"
+                              dangerouslySetInnerHTML={{
+                                __html: renderMarkdownLite(message.content),
+                              }}
+                            />
+                            {message.role === "assistant" && (
+                              <div className="ai-bubble-actions">
+                                {message.id === lastDoneAssistantId && (
+                                  <button
+                                    aria-label={t("ai.regenerate")}
+                                    className="ai-action-button"
+                                    disabled={isSending}
+                                    onClick={() => void regenerateLast()}
+                                    title={t("ai.regenerate")}
+                                    type="button"
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                                  </button>
+                                )}
+                                <button
+                                  aria-label={
+                                    copiedId === message.id ? t("ai.copied") : t("ai.copy")
+                                  }
+                                  className="ai-action-button"
+                                  onClick={() => void copyMessage(message)}
+                                  title={t("ai.copy")}
+                                  type="button"
+                                >
+                                  {copiedId === message.id ? (
+                                    <Check className="h-3.5 w-3.5" aria-hidden />
+                                  ) : (
+                                    <Copy className="h-3.5 w-3.5" aria-hidden />
+                                  )}
+                                </button>
+                                {activePath && (
+                                  <button
+                                    aria-label={
+                                      insertedId === message.id
+                                        ? t("ai.inserted")
+                                        : t("ai.insert")
+                                    }
+                                    className="ai-action-button"
+                                    onClick={() => insertIntoNote(message)}
+                                    title={t("ai.insert")}
+                                    type="button"
+                                  >
+                                    {insertedId === message.id ? (
+                                      <Check className="h-3.5 w-3.5" aria-hidden />
+                                    ) : (
+                                      <FileText className="h-3.5 w-3.5" aria-hidden />
+                                    )}
+                                  </button>
+                                )}
+                                <button
+                                  aria-label={
+                                    insertAsNoteId === message.id
+                                      ? t("ai.insertAsNoteDone")
+                                      : t("ai.insertAsNote")
+                                  }
+                                  className="ai-action-button"
+                                  onClick={() => void insertAsNewNote(message)}
+                                  title={t("ai.insertAsNote")}
+                                  type="button"
+                                >
+                                  {insertAsNoteId === message.id ? (
+                                    <Check className="h-3.5 w-3.5" aria-hidden />
+                                  ) : (
+                                    <FilePlus2 className="h-3.5 w-3.5" aria-hidden />
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="ai-composer shrink-0 border-t border-border p-3">
+              <textarea
+                aria-label={t("ai.inputPlaceholder")}
+                className="ai-composer-input"
+                disabled={isSending}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    void send(draft);
+                  }
+                }}
+                placeholder={t("ai.inputPlaceholder")}
+                rows={3}
+                value={draft}
+              />
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="ai-model-name min-w-0 truncate" title={settings.ai.model}>
+                  {settings.ai.model}
+                </span>
+                <Button
+                  aria-label={t("ai.send")}
+                  className="h-8 w-8 shrink-0"
+                  disabled={!draft.trim() || isSending}
+                  onClick={() => void send(draft)}
+                  size="icon"
+                  variant="primary"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </section>

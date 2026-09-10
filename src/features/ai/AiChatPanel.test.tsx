@@ -170,7 +170,8 @@ describe("AiChatPanel", () => {
     });
     await userEvent.click(view.getByRole("button", { name: "插入到当前笔记" }));
     expect(useAppStore.getState().content).toContain("插入的内容");
-    expect(useAppStore.getState().libraryPanelMode).toBe("notes");
+    // 并排布局下 AI 面板保持打开，无需跳回笔记视图
+    expect(useAppStore.getState().libraryPanelMode).toBe("ai");
   });
 
   it("starts a new chat from the header action", async () => {
@@ -192,10 +193,9 @@ describe("AiChatPanel", () => {
       expect(view.getByText("回复一")).toBeInTheDocument();
     });
     await userEvent.click(view.getAllByRole("button", { name: "新对话" })[0]);
+    expect(view.getByText("告诉我你想怎么修改这篇笔记")).toBeInTheDocument();
     expect(
-      view.getByText(
-        "向 AI 描述你的写作需求，例如“帮我扩写这一段”或“为这篇笔记写一份摘要”。",
-      ),
+      view.getByText("描述你的写作需求，或点击下面的快捷操作，AI 会结合当前笔记回答。"),
     ).toBeInTheDocument();
   });
 
