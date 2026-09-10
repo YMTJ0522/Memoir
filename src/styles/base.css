@@ -93,6 +93,26 @@ input:focus-visible,
   animation: memoir-fade-in var(--memoir-motion-fast) var(--memoir-ease);
 }
 
+/* Panel switch: fade with a slight rise for a layered, silky transition. */
+.memoir-panel-in {
+  animation: memoir-rise-in var(--memoir-motion) var(--memoir-ease);
+}
+
+/* Staggered list entrance: first items cascade in, the rest share the cap. */
+.memoir-stagger > * {
+  animation: memoir-rise-in var(--memoir-motion) var(--memoir-ease) backwards;
+}
+
+.memoir-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.memoir-stagger > *:nth-child(2) { animation-delay: 16ms; }
+.memoir-stagger > *:nth-child(3) { animation-delay: 32ms; }
+.memoir-stagger > *:nth-child(4) { animation-delay: 48ms; }
+.memoir-stagger > *:nth-child(5) { animation-delay: 64ms; }
+.memoir-stagger > *:nth-child(6) { animation-delay: 80ms; }
+.memoir-stagger > *:nth-child(7) { animation-delay: 96ms; }
+.memoir-stagger > *:nth-child(8) { animation-delay: 112ms; }
+.memoir-stagger > *:nth-child(n + 9) { animation-delay: 120ms; }
+
 .memoir-notice {
   animation: memoir-notice-in 180ms var(--memoir-ease);
 }
@@ -103,6 +123,17 @@ input:focus-visible,
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes memoir-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -139,6 +170,8 @@ input:focus-visible,
   .memoir-context-menu,
   .memoir-select-menu,
   .memoir-fade-in,
+  .memoir-panel-in,
+  .memoir-stagger > *,
   .memoir-notice,
   .editor-pane,
   .preview-pane,

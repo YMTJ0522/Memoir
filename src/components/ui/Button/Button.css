@@ -9,7 +9,13 @@
     color 150ms var(--memoir-ease),
     background-color 150ms var(--memoir-ease),
     border-color 150ms var(--memoir-ease),
-    box-shadow 150ms var(--memoir-ease);
+    box-shadow 150ms var(--memoir-ease),
+    transform 100ms var(--memoir-ease);
+}
+
+/* Tactile press feedback shared by every button variant. */
+.memoir-button:not(:disabled):active {
+  transform: scale(0.97);
 }
 
 .memoir-button-md {
