@@ -120,6 +120,7 @@ export function ContextMenu({
         ref={menuRef}
         aria-labelledby={labelId}
         className={cn("memoir-context-menu", visible && "is-open")}
+        data-window-drag="ignore"
         onContextMenu={(event) => event.preventDefault()}
         onKeyDown={onMenuKeyDown}
         role="menu"

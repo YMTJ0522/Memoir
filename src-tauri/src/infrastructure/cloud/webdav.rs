@@ -67,6 +67,9 @@ impl WebDavProvider {
             .redirect(reqwest::redirect::Policy::limited(5))
             .danger_accept_invalid_certs(profile.webdav.insecure_tls)
             .user_agent("Memoir/0.1")
+            // Cloud sync talks to the user's own provider; never route it
+            // through system/env proxies which may hijack or break WebDAV.
+            .no_proxy()
             .build()
             .map_err(|error| {
                 AppError::new(ErrorCode::Io, "Unable to create the WebDAV client.")
@@ -221,7 +224,9 @@ impl WebDavProvider {
                 self.remember_collection("");
                 Ok(())
             }
-            Err(error) if error.code == ErrorCode::NotFound => {
+            Err(error)
+                if error.code == ErrorCode::NotFound || base_collection_missing(&error) =>
+            {
                 let mut built = self.base.clone();
                 let segments = collection_segments(&self.base);
                 built.set_path("/");
@@ -439,8 +444,22 @@ fn infinity_listing_usable(base: &Url, items: &[PropFindItem]) -> bool {
 
 fn depth_infinity_unsupported(error: &AppError) -> bool {
     error.details.as_deref().is_some_and(|details| {
-        details == "HTTP 400" || details == "HTTP 403" || details == "HTTP 501"
+        // PROPFIND error details carry a "body=" suffix, so match the prefix.
+        details.starts_with("HTTP 400")
+            || details.starts_with("HTTP 403")
+            || details.starts_with("HTTP 501")
     })
+}
+
+/// Some providers (Jianguoyun/坚果云) answer PROPFIND on a missing folder
+/// with HTTP 400 instead of the standard 404. Treat that as "folder missing"
+/// so we fall back to creating the base collection ourselves. Note the
+/// PROPFIND error details look like "HTTP 400 body=…", hence starts_with.
+fn base_collection_missing(error: &AppError) -> bool {
+    error
+        .details
+        .as_deref()
+        .is_some_and(|details| details.starts_with("HTTP 400"))
 }
 
 pub fn parse_base_url(raw: &str, remote_prefix: &str) -> AppResult<Url> {
@@ -786,8 +805,28 @@ mod tests {
         let error =
             AppError::new(ErrorCode::Io, "List remote folder failed.").with_details("HTTP 403");
         assert!(depth_infinity_unsupported(&error));
+        // PROPFIND errors carry a body preview suffix; prefix matching must still hit.
+        let with_body = AppError::new(ErrorCode::Io, "List remote folder failed.")
+            .with_details("HTTP 400 body=<d:error>…");
+        assert!(depth_infinity_unsupported(&with_body));
         let other =
             AppError::new(ErrorCode::Io, "List remote folder failed.").with_details("HTTP 500");
         assert!(!depth_infinity_unsupported(&other));
+    }
+
+    #[test]
+    fn treats_jianguoyun_400_as_missing_base_collection() {
+        // Jianguoyun answers PROPFIND on a missing folder with HTTP 400.
+        let missing = AppError::new(ErrorCode::Io, "List remote folder failed.")
+            .with_details("HTTP 400 body=<d:error/>");
+        assert!(base_collection_missing(&missing));
+        // A real 404 maps to NotFound and must also take the create path.
+        let not_found = AppError::new(ErrorCode::NotFound, "Remote folder was not found.")
+            .with_details("HTTP 404");
+        assert!(!base_collection_missing(&not_found));
+        assert_eq!(not_found.code, ErrorCode::NotFound);
+        let unrelated =
+            AppError::new(ErrorCode::Io, "List remote folder failed.").with_details("HTTP 500");
+        assert!(!base_collection_missing(&unrelated));
     }
 }

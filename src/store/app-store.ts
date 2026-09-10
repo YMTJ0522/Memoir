@@ -61,7 +61,6 @@ const PREFERENCES_DEBOUNCE_MS = 300;
 const DRAFT_DEBOUNCE_MS = 450;
 const QUERY_DEBOUNCE_MS = 150;
 const CLOUD_SYNC_DEBOUNCE_MS = 15_000;
-const CLOUD_SYNC_OPEN_DELAY_MS = 2_000;
 const AI_SESSIONS_DEBOUNCE_MS = 400;
 export const AUTOSAVE_INTERVAL_MS = 3000;
 export const NOTE_METADATA_DEBOUNCE_MS = 80;
@@ -496,7 +495,9 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
           if (workspaceRoot) {
             await loadCloudSyncProfile(workspaceRoot);
             await get().refreshWorkspace();
-            scheduleCloudSync(CLOUD_SYNC_OPEN_DELAY_MS);
+            // NOTE: No auto-sync on startup. Users sync explicitly from the
+            // cloud panel or after note edits (debounced) to avoid noisy
+            // failure banners when the machine/network is not ready.
           }
           set({ initialized: true });
         } catch (error) {
@@ -552,7 +553,6 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
             set({ recentWorkspaces });
             await loadCloudSyncProfile(workspaceRoot);
             await get().refreshWorkspace();
-            scheduleCloudSync(CLOUD_SYNC_OPEN_DELAY_MS);
             return;
           }
           set({
@@ -575,7 +575,6 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
           });
           await loadCloudSyncProfile(workspaceRoot);
           await get().refreshWorkspace();
-          scheduleCloudSync(CLOUD_SYNC_OPEN_DELAY_MS);
         } catch (error) {
           set({
             isLoading: false,

@@ -317,6 +317,7 @@ export function Combobox({
             aria-hidden={!open}
             aria-label={label}
             className={cn("memoir-select-menu", visible && "is-open")}
+            data-window-drag="ignore"
             id={listId}
             role="listbox"
             style={{ left: position.left, top: position.top, minWidth: position.width }}

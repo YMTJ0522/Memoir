@@ -12,6 +12,10 @@ const INTERACTIVE_SELECTOR = [
   "[role='button']",
   "[role='switch']",
   "[role='separator']",
+  "[role='option']",
+  "[role='listbox']",
+  "[role='menu']",
+  "[role='menuitem']",
   "[data-window-drag='ignore']",
 ].join(",");
 

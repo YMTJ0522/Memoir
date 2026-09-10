@@ -305,6 +305,49 @@ describe("AiChatPanel", () => {
     expect(second.getAllByText("第一问")).toHaveLength(2);
   });
 
+  it("switches back to a previous session from the header picker", async () => {
+    const gateways = createMockGateways();
+    gateways.ai.chatResponses = ["旧会话回复"];
+    setGatewaysForTests(gateways);
+    useAppStore.setState({
+      workspaceRoot: "/workspace",
+      activePath: "one.md",
+      libraryPanelMode: "ai",
+      settings: configuredAi,
+      notes: [note("one.md", "One")],
+      content: "",
+    });
+    const view = render(<AiChatPanel />);
+    await userEvent.type(view.getByRole("textbox"), "旧会话提问");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(view.getByText("旧会话回复")).toBeInTheDocument();
+    });
+    const firstSessionId = useAppStore.getState().activeAiSessionId;
+    expect(firstSessionId).toBeTruthy();
+
+    // 新建对话后，通过头部会话选择器切回旧会话
+    await userEvent.click(view.getAllByRole("button", { name: "新对话" })[0]);
+    await waitFor(() => {
+      expect(useAppStore.getState().aiSessions).toHaveLength(2);
+    });
+
+    const picker = view.getByRole("combobox", { name: "选择会话" });
+    await userEvent.click(picker);
+    const oldOption = await view.findByRole("option", { name: "旧会话提问" });
+    await userEvent.click(oldOption);
+
+    await waitFor(() => {
+      expect(useAppStore.getState().activeAiSessionId).toBe(firstSessionId);
+    });
+    // 旧会话的消息重新显示
+    await waitFor(() => {
+      expect(view.getByText("旧会话回复")).toBeInTheDocument();
+    });
+    // 且不会再误创建多余会话
+    expect(useAppStore.getState().aiSessions).toHaveLength(2);
+  });
+
   it("creates a new note from an assistant reply via 另存为新笔记", async () => {
     const gateways = createMockGateways();
     gateways.ai.chatResponses = ["# 标题行\n\n这是内容"];

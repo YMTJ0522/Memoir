@@ -66,6 +66,9 @@ impl S3Provider {
             .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(profile.s3.insecure_tls)
             .user_agent("Memoir/0.1")
+            // Cloud sync talks to the user's own provider; never route it
+            // through system/env proxies which may hijack or break S3 calls.
+            .no_proxy()
             .build()
             .map_err(|error| {
                 AppError::new(ErrorCode::Io, "Unable to create the S3 client.")

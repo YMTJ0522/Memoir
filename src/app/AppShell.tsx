@@ -2,6 +2,7 @@ import { FolderOpen, Library, Menu, Pencil } from "lucide-react";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, StatusNotice } from "../components/ui";
 import {
+  AI_LIBRARY_WIDTH,
   COLLAPSED_SIDEBAR_WIDTH,
   DEFAULT_LIBRARY_WIDTH,
   DEFAULT_SIDEBAR_WIDTH,
@@ -127,6 +128,21 @@ function WorkspaceLayout({
     return () => observer.disconnect();
   }, []);
 
+  // Widen the column once when entering the AI panel so chat content has
+  // room; users can still drag back afterwards (their width is respected on
+  // later switches because it no longer equals the notes default).
+  const prevLibraryPanelMode = useRef(libraryPanelMode);
+  useEffect(() => {
+    if (
+      prevLibraryPanelMode.current !== "ai" &&
+      libraryPanelMode === "ai" &&
+      layout.libraryWidth === DEFAULT_LIBRARY_WIDTH
+    ) {
+      setLayout({ libraryWidth: AI_LIBRARY_WIDTH });
+    }
+    prevLibraryPanelMode.current = libraryPanelMode;
+  }, [libraryPanelMode, layout.libraryWidth, setLayout]);
+
   return (
     <WindowFrame controlsHidden={isSidebarCollapsed}>
       <main
@@ -164,16 +180,14 @@ function WorkspaceLayout({
             onInsertAttachment={(markdown) => editorRef.current?.insertText(markdown)}
             onRename={openRename}
           />
-          {libraryPanelMode !== "ai" && (
-            <LayoutResizeHandle
-              defaultValue={DEFAULT_LIBRARY_WIDTH}
-              label={t("layout.resizeLibrary")}
-              max={libraryDragMax}
-              min={Math.min(MIN_LIBRARY_WIDTH, columns.library)}
-              onChange={(libraryWidth) => setLayout({ libraryWidth })}
-              value={columns.library}
-            />
-          )}
+          <LayoutResizeHandle
+            defaultValue={libraryPanelMode === "ai" ? AI_LIBRARY_WIDTH : DEFAULT_LIBRARY_WIDTH}
+            label={t("layout.resizeLibrary")}
+            max={libraryDragMax}
+            min={Math.min(MIN_LIBRARY_WIDTH, columns.library)}
+            onChange={(libraryWidth) => setLayout({ libraryWidth })}
+            value={columns.library}
+          />
         </div>
         <Suspense
           fallback={

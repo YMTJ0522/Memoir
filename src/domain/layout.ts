@@ -5,6 +5,8 @@ export const MAX_SIDEBAR_WIDTH = 360;
 export const DEFAULT_LIBRARY_WIDTH = 280;
 export const MIN_LIBRARY_WIDTH = 200;
 export const MAX_LIBRARY_WIDTH = 520;
+/** Preferred library width while the AI chat panel is active (wider for chat). */
+export const AI_LIBRARY_WIDTH = 360;
 export const MIN_EDITOR_WIDTH = 280;
 export const DEFAULT_EDITOR_SPLIT = 0.5;
 export const MIN_EDITOR_SPLIT = 0.28;
