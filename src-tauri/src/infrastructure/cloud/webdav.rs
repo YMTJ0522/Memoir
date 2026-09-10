@@ -166,7 +166,14 @@ impl WebDavProvider {
             .map_err(map_reqwest)?;
         let status = response.status();
         if status.as_u16() != 207 && !status.is_success() {
-            return Err(map_status(status, "List remote folder"));
+            let body_preview = response.text().unwrap_or_default();
+            let mut error = map_status(status, "List remote folder");
+            error.details = Some(format!(
+                "HTTP {} body={}",
+                status.as_u16(),
+                body_preview.chars().take(200).collect::<String>()
+            ));
+            return Err(error);
         }
         let xml = response.text().map_err(map_reqwest)?;
         parse_multistatus(&xml)
@@ -453,6 +460,12 @@ pub fn parse_base_url(raw: &str, remote_prefix: &str) -> AppResult<Url> {
         let mut segments = url
             .path_segments_mut()
             .map_err(|_| AppError::invalid_path("WebDAV URL is invalid."))?;
+        // `path_segments_mut` keeps a trailing empty segment for URLs that end
+        // with "/". That empty segment must be removed before appending the
+        // remote prefix, otherwise the resulting URL contains a double slash
+        // (e.g. `/dav//Memoir/`), which some servers (Jianguoyun/坚果云) reject
+        // with HTTP 409 "AncestorsNotFound".
+        segments.pop_if_empty();
         for segment in remote_prefix.split('/') {
             if segment.is_empty() {
                 continue;
