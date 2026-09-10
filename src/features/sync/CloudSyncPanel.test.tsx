@@ -220,4 +220,46 @@ describe("CloudSyncPanel", () => {
       expect(button).toBeDisabled();
     }
   });
+
+  it("localizes a stored rate-limit error into the Chinese hint", () => {
+    useAppStore.setState({
+      workspaceRoot: "/workspace",
+      cloudSyncProfile: {
+        ...defaultCloudSyncProfile(),
+        enabled: true,
+        lastStatus: "error",
+        lastError:
+          "The cloud service is temporarily rate-limited. Please wait a moment and try again.",
+        webdav: {
+          url: "https://dav.jianguoyun.com/dav",
+          username: "ada",
+          password: "secret",
+          insecureTls: false,
+        },
+      },
+    });
+    const view = render(<CloudSyncPanel />);
+    expect(view.getByText(/云服务暂时限流/)).toBeInTheDocument();
+    expect(view.queryByText(/rate-limited/)).not.toBeInTheDocument();
+  });
+
+  it("keeps non-rate-limit stored errors as-is", () => {
+    useAppStore.setState({
+      workspaceRoot: "/workspace",
+      cloudSyncProfile: {
+        ...defaultCloudSyncProfile(),
+        enabled: true,
+        lastStatus: "error",
+        lastError: "Remote folder was not found.",
+        webdav: {
+          url: "https://dav.example/dav",
+          username: "ada",
+          password: "secret",
+          insecureTls: false,
+        },
+      },
+    });
+    const view = render(<CloudSyncPanel />);
+    expect(view.getByText("Remote folder was not found.")).toBeInTheDocument();
+  });
 });

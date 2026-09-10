@@ -169,14 +169,9 @@ impl WebDavProvider {
             .map_err(map_reqwest)?;
         let status = response.status();
         if status.as_u16() != 207 && !status.is_success() {
-            let body_preview = response.text().unwrap_or_default();
-            let mut error = map_status(status, "List remote folder");
-            error.details = Some(format!(
-                "HTTP {} body={}",
-                status.as_u16(),
-                body_preview.chars().take(200).collect::<String>()
-            ));
-            return Err(error);
+            // Do not leak the provider's raw error body (XML etc.) into user-visible
+            // messages; the status code is enough for diagnostics.
+            return Err(map_status(status, "List remote folder"));
         }
         let xml = response.text().map_err(map_reqwest)?;
         parse_multistatus(&xml)
@@ -444,7 +439,8 @@ fn infinity_listing_usable(base: &Url, items: &[PropFindItem]) -> bool {
 
 fn depth_infinity_unsupported(error: &AppError) -> bool {
     error.details.as_deref().is_some_and(|details| {
-        // PROPFIND error details carry a "body=" suffix, so match the prefix.
+        // Match the "HTTP <code>" prefix; provider body previews used to be
+        // appended but are intentionally not included anymore.
         details.starts_with("HTTP 400")
             || details.starts_with("HTTP 403")
             || details.starts_with("HTTP 501")
@@ -453,8 +449,7 @@ fn depth_infinity_unsupported(error: &AppError) -> bool {
 
 /// Some providers (Jianguoyun/坚果云) answer PROPFIND on a missing folder
 /// with HTTP 400 instead of the standard 404. Treat that as "folder missing"
-/// so we fall back to creating the base collection ourselves. Note the
-/// PROPFIND error details look like "HTTP 400 body=…", hence starts_with.
+/// so we fall back to creating the base collection ourselves.
 fn base_collection_missing(error: &AppError) -> bool {
     error
         .details

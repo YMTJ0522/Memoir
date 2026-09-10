@@ -113,6 +113,14 @@ function providerSourceLabel(profile: CloudSyncProfile) {
   return profile.webdav.url ? sourceHost(profile.webdav.url) : "";
 }
 
+/** Map stored provider errors (English) to localized user-facing text. */
+function localizeLastError(message: string, t: (key: MessageKey, params?: MessageParams) => string) {
+  if (/rate[- ]?limited/i.test(message)) {
+    return t("errors.runCloudSyncRateLimited");
+  }
+  return message;
+}
+
 export function CloudSyncPanel() {
   const profile = useAppStore((state) => state.cloudSyncProfile);
   const progress = useAppStore((state) => state.cloudSyncProgress);
@@ -280,7 +288,7 @@ export function CloudSyncPanel() {
                     ? ` · ${t("sync.took", { duration: formatSyncDuration(profile.lastReport.durationMs) })}`
                     : ""}
                 </span>
-                {profile.lastError && <span>{profile.lastError}</span>}
+                {profile.lastError && <span>{localizeLastError(profile.lastError, t)}</span>}
                 <p className="cloud-sync-row-description">
                   {[
                     providerLabel,

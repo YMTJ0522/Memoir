@@ -162,13 +162,9 @@ impl CloudSyncService {
             Err(error) => {
                 profile.last_sync_ms = Some(now_ms());
                 profile.last_status = Some("error".into());
-                let detail = error
-                    .details
-                    .as_deref()
-                    .filter(|detail| !detail.is_empty())
-                    .map(|detail| format!(" ({detail})"))
-                    .unwrap_or_default();
-                profile.last_error = Some(format!("{}{}", error.message, detail));
+                // Keep the stored error concise: message-only, without the raw
+                // provider details (HTTP/XML body) which are noisy and English.
+                profile.last_error = Some(error.message.clone());
                 let _ = self.save_profile(&workspace_key, profile);
                 Err(error)
             }
