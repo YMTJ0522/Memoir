@@ -3,7 +3,12 @@
  * Leaves URL schemes (`demo://`) and Windows drive letters intact.
  */
 export function resolveWorkspaceFilePath(root: string, ...relativeParts: string[]): string {
-  const rootNormalized = root.replace(/\\/g, "/").replace(/\/+$/, "");
+  // Windows verbatim prefixes (`\\?\C:\...`) break forward-slash joining;
+  // strip them defensively (legacy persisted state may still contain them).
+  const verbatimMatch = root.match(/^\\\\\?\\(.+)$/);
+  const rootNormalized = (verbatimMatch ? verbatimMatch[1] : root)
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "");
   const relative = relativeParts
     .filter(Boolean)
     .join("/")

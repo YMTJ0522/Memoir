@@ -2,8 +2,13 @@ import { relativePathFromNote } from "./paths";
 
 export const ATTACHMENTS_DIR = "attachments";
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_VIDEO_ATTACHMENT_BYTES = 200 * 1024 * 1024;
+export const MAX_AUDIO_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+/** Documents and archives stream from disk on import, so a two-gigabyte cap
+ * avoids memory spikes while staying ahead of real-world project archives. */
+export const MAX_LARGE_ATTACHMENT_BYTES = 2 * 1024 * 1024 * 1024;
 
-export const ATTACHMENT_EXTENSIONS = [
+export const IMAGE_EXTENSIONS = [
   "png",
   "jpg",
   "jpeg",
@@ -13,6 +18,58 @@ export const ATTACHMENT_EXTENSIONS = [
   "avif",
   "svg",
 ] as const;
+
+export const VIDEO_EXTENSIONS = [
+  "mp4",
+  "webm",
+  "mov",
+  "m4v",
+  "avi",
+  "mkv",
+  "wmv",
+] as const;
+
+export const AUDIO_EXTENSIONS = ["mp3", "wav", "ogg", "m4a", "flac"] as const;
+
+export const DOCUMENT_EXTENSIONS = [
+  "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "txt",
+  "csv",
+  "md",
+  "rtf",
+  "odt",
+  "ods",
+  "odp",
+  "epub",
+] as const;
+
+export const ARCHIVE_EXTENSIONS = [
+  "zip",
+  "rar",
+  "7z",
+  "tar",
+  "gz",
+  "tgz",
+  "bz2",
+  "xz",
+] as const;
+
+export const ATTACHMENT_EXTENSIONS = [
+  ...IMAGE_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
+  ...AUDIO_EXTENSIONS,
+  ...DOCUMENT_EXTENSIONS,
+  ...ARCHIVE_EXTENSIONS,
+] as const;
+
+/** Attachment kinds beyond plain images drive icon + insert syntax. */
+export type AttachmentKind = "image" | "video" | "audio" | "document" | "archive";
 
 export type AttachmentExtension = (typeof ATTACHMENT_EXTENSIONS)[number];
 
@@ -41,6 +98,46 @@ const MIME_TO_EXTENSION: Record<string, AttachmentExtension> = {
   "image/x-ms-bmp": "bmp",
   "image/avif": "avif",
   "image/svg+xml": "svg",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+  "video/x-m4v": "m4v",
+  "video/x-msvideo": "avi",
+  "video/avi": "avi",
+  "video/x-matroska": "mkv",
+  "video/x-ms-wmv": "wmv",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/ogg": "ogg",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/flac": "flac",
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "text/plain": "txt",
+  "text/csv": "csv",
+  "text/markdown": "md",
+  "application/rtf": "rtf",
+  "application/vnd.oasis.opendocument.text": "odt",
+  "application/vnd.oasis.opendocument.spreadsheet": "ods",
+  "application/vnd.oasis.opendocument.presentation": "odp",
+  "application/epub+zip": "epub",
+  "application/zip": "zip",
+  "application/x-zip-compressed": "zip",
+  "application/vnd.rar": "rar",
+  "application/x-7z-compressed": "7z",
+  "application/x-tar": "tar",
+  "application/gzip": "gz",
+  "application/x-gzip": "gz",
+  "application/x-bzip2": "bz2",
+  "application/x-xz": "xz",
 };
 
 const EXTENSION_TO_MIME: Record<string, string> = {
@@ -52,12 +149,100 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   bmp: "image/bmp",
   avif: "image/avif",
   svg: "image/svg+xml",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  m4v: "video/x-m4v",
+  avi: "video/x-msvideo",
+  mkv: "video/x-matroska",
+  wmv: "video/x-ms-wmv",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  m4a: "audio/mp4",
+  flac: "audio/flac",
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain",
+  csv: "text/plain",
+  md: "text/plain",
+  rtf: "application/rtf",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  epub: "application/epub+zip",
+  zip: "application/zip",
+  rar: "application/vnd.rar",
+  "7z": "application/x-7z-compressed",
+  tar: "application/x-tar",
+  gz: "application/gzip",
+  tgz: "application/gzip",
+  bz2: "application/x-bzip2",
+  xz: "application/x-xz",
 };
+
+const IMAGE_EXTENSION_SET = new Set<string>(IMAGE_EXTENSIONS);
+const VIDEO_EXTENSION_SET = new Set<string>(VIDEO_EXTENSIONS);
+const AUDIO_EXTENSION_SET = new Set<string>(AUDIO_EXTENSIONS);
+const DOCUMENT_EXTENSION_SET = new Set<string>(DOCUMENT_EXTENSIONS);
+const ARCHIVE_EXTENSION_SET = new Set<string>(ARCHIVE_EXTENSIONS);
 
 const GENERIC_STEM = /^(image|blob|untitled|paste|screenshot)(\s*[-_]?\d+)?$/i;
 
 export function isAttachmentExtension(value: string): value is AttachmentExtension {
   return (ATTACHMENT_EXTENSIONS as readonly string[]).includes(value.toLowerCase());
+}
+
+export function isImageExtension(value: string): boolean {
+  return IMAGE_EXTENSION_SET.has(value.toLowerCase());
+}
+
+export function isVideoExtension(value: string): boolean {
+  return VIDEO_EXTENSION_SET.has(value.toLowerCase());
+}
+
+export function isAudioExtension(value: string): boolean {
+  return AUDIO_EXTENSION_SET.has(value.toLowerCase());
+}
+
+export function isDocumentExtension(value: string): boolean {
+  return DOCUMENT_EXTENSION_SET.has(value.toLowerCase());
+}
+
+export function isArchiveExtension(value: string): boolean {
+  return ARCHIVE_EXTENSION_SET.has(value.toLowerCase());
+}
+
+/** Maps an extension to the coarse attachment kind used for icons and insert syntax. */
+export function attachmentKindFromExtension(extension: string): AttachmentKind {
+  const value = extension.toLowerCase();
+  if (IMAGE_EXTENSION_SET.has(value)) return "image";
+  if (VIDEO_EXTENSION_SET.has(value)) return "video";
+  if (AUDIO_EXTENSION_SET.has(value)) return "audio";
+  if (ARCHIVE_EXTENSION_SET.has(value)) return "archive";
+  return "document";
+}
+
+export function maxAttachmentBytesForExtension(extension: string): number {
+  const value = extension.toLowerCase();
+  if (VIDEO_EXTENSION_SET.has(value)) return MAX_VIDEO_ATTACHMENT_BYTES;
+  if (AUDIO_EXTENSION_SET.has(value)) return MAX_AUDIO_ATTACHMENT_BYTES;
+  if (DOCUMENT_EXTENSION_SET.has(value) || ARCHIVE_EXTENSION_SET.has(value)) {
+    return MAX_LARGE_ATTACHMENT_BYTES;
+  }
+  return MAX_ATTACHMENT_BYTES;
+}
+
+export function maxAttachmentBytesForFile(file: { name: string; type: string }): number {
+  const byMime = extensionFromMime(file.type);
+  if (byMime) return maxAttachmentBytesForExtension(byMime);
+  const byName = extensionFromFileName(file.name);
+  return maxAttachmentBytesForExtension(byName || "");
 }
 
 export function extensionFromMime(mimeType: string): AttachmentExtension | null {
@@ -75,15 +260,46 @@ export function extensionFromFileName(fileName: string): AttachmentExtension | n
 }
 
 export function isImageFile(file: { name: string; type: string }): boolean {
-  return Boolean(extensionFromMime(file.type) || extensionFromFileName(file.name));
+  const byMime = extensionFromMime(file.type);
+  if (byMime) return isImageExtension(byMime);
+  const byName = extensionFromFileName(file.name);
+  return byName ? isImageExtension(byName) : false;
 }
 
-export function isImagePath(path: string): boolean {
+export function isVideoFile(file: { name: string; type: string }): boolean {
+  const byMime = extensionFromMime(file.type);
+  if (byMime) return isVideoExtension(byMime);
+  const byName = extensionFromFileName(file.name);
+  return byName ? isVideoExtension(byName) : false;
+}
+
+export function isMediaFile(file: { name: string; type: string }): boolean {
+  return isImageFile(file) || isVideoFile(file);
+}
+
+export function isAttachmentLikeFile(file: { name: string; type: string }): boolean {
+  const byMime = extensionFromMime(file.type);
+  if (byMime) return isAttachmentExtension(byMime);
+  const byName = extensionFromFileName(file.name);
+  return byName ? true : false;
+}
+
+export function isAudioPath(path: string): boolean {
+  const match = path.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return Boolean(match && isAudioExtension(match[1]));
+}
+
+export function isAttachmentPath(path: string): boolean {
   return Boolean(extensionFromFileName(path.split(/[\\/]/).pop() || path));
 }
 
-export function imagePathsFromDrop(paths: string[]): string[] {
-  return paths.filter(isImagePath);
+export function isVideoPath(path: string): boolean {
+  const match = path.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return Boolean(match && isVideoExtension(match[1]));
+}
+
+export function attachmentPathsFromDrop(paths: string[]): string[] {
+  return paths.filter(isAttachmentPath);
 }
 
 export function sanitizeAttachmentFileName(name: string): string {
@@ -150,13 +366,30 @@ export function markdownImageForAttachment(
   return `![${alt}](${href})`;
 }
 
+/**
+ * Insert syntax per kind: images/videos/audio embed via `![alt](path)`
+ * (video and audio render inline players), documents and archives insert
+ * a plain `[filename](path)` link that opens with the system handler.
+ */
+export function markdownForAttachment(
+  noteRelativePath: string,
+  attachment: Pick<AttachmentFile, "relativePath" | "fileName" | "extension">,
+): string {
+  const kind = attachmentKindFromExtension(attachment.extension);
+  if (kind === "document" || kind === "archive") {
+    const href = relativePathFromNote(noteRelativePath, attachment.relativePath);
+    return `[${attachment.fileName}](${href})`;
+  }
+  return markdownImageForAttachment(noteRelativePath, attachment);
+}
+
 export function markdownForAttachments(
   noteRelativePath: string | null,
-  attachments: Array<Pick<AttachmentFile, "relativePath" | "fileName">>,
+  attachments: Array<Pick<AttachmentFile, "relativePath" | "fileName" | "extension">>,
 ): string {
   if (!noteRelativePath || attachments.length === 0) return "";
   return attachments
-    .map((attachment) => markdownImageForAttachment(noteRelativePath, attachment))
+    .map((attachment) => markdownForAttachment(noteRelativePath, attachment))
     .join("\n\n");
 }
 
@@ -191,16 +424,32 @@ export async function fileToBase64(file: Blob): Promise<string> {
   return btoa(binary);
 }
 
-export function collectClipboardImages(data: DataTransfer | null): File[] {
+export function collectClipboardMediaFiles(data: DataTransfer | null): File[] {
   if (!data) return [];
   const fromItems: File[] = [];
   for (const item of Array.from(data.items ?? [])) {
     if (item.kind !== "file" && !item.type.startsWith("image/")) continue;
     const file = item.getAsFile();
-    if (file && isImageFile(file)) fromItems.push(file);
+    if (file && isMediaFile(file)) fromItems.push(file);
   }
   if (fromItems.length) return uniqueFiles(fromItems);
-  return uniqueFiles(Array.from(data.files ?? []).filter(isImageFile));
+  return uniqueFiles(Array.from(data.files ?? []).filter(isMediaFile));
+}
+
+/**
+ * Collects every supported attachment from a clipboard/drag payload: images
+ * and videos (inline previews) plus documents, archives and audio (links).
+ */
+export function collectClipboardAttachmentFiles(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const fromItems: File[] = [];
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== "file" && !item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (file && isAttachmentLikeFile(file)) fromItems.push(file);
+  }
+  if (fromItems.length) return uniqueFiles(fromItems);
+  return uniqueFiles(Array.from(data.files ?? []).filter(isAttachmentLikeFile));
 }
 
 function uniqueFiles(files: File[]): File[] {

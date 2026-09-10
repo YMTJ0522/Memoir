@@ -1,7 +1,27 @@
 import { useEffect, useState } from "react";
 import { getCachedMermaidSvg, renderMermaidDiagram } from "./mermaid-runtime";
 
+/** Tracks the `data-theme` attribute on <html> so MermaidBlock re-renders
+ * when the user toggles between light and dark — the mermaid runtime
+ * picks a different theme + palette and the cached SVG must be swapped. */
+function useThemeToken() {
+  const [theme, setTheme] = useState(
+    typeof document !== "undefined" ? document.documentElement.dataset.theme ?? "light" : "light",
+  );
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const observer = new MutationObserver(() => {
+      const next = document.documentElement.dataset.theme ?? "light";
+      setTheme((prev) => (prev !== next ? next : prev));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
+}
+
 export default function MermaidBlock({ code }: { code: string }) {
+  const theme = useThemeToken();
   const cached = getCachedMermaidSvg(code);
   const [svg, setSvg] = useState(cached || "");
   const [error, setError] = useState("");
@@ -29,7 +49,7 @@ export default function MermaidBlock({ code }: { code: string }) {
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [code, theme]);
 
   if (error) {
     return <pre className="border-danger/30 bg-danger/5 text-danger">{error}</pre>;

@@ -19,6 +19,15 @@ describe("workspace paths", () => {
     );
   });
 
+  it("strips windows verbatim prefixes before joining", () => {
+    expect(resolveWorkspaceFilePath("\\\\?\\E:\\文档\\笔记文档", "attachments/a.png")).toBe(
+      "E:/文档/笔记文档/attachments/a.png",
+    );
+    expect(
+      resolveWorkspaceFilePath("\\\\?\\E:\\notes", "日记", "../attachments/头像.jpg"),
+    ).toBe("E:/notes/attachments/头像.jpg");
+  });
+
   it("builds markdown-relative paths from the note directory", () => {
     expect(noteDirectory("welcome.md")).toBe("");
     expect(noteDirectory("日记/today.md")).toBe("日记");

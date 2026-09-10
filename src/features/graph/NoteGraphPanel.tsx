@@ -42,7 +42,7 @@ export function NoteGraphPanel() {
   }, [degrees, graph.nodes, needle]);
 
   return (
-    <div className="memoir-fade-in flex min-h-0 flex-1 flex-col">
+    <div className="memoir-panel-in flex min-h-0 flex-1 flex-col">
       <div className="graph-panel-stats mx-3 mt-2.5 grid grid-cols-3 gap-1.5">
         <div className="graph-stat">
           <p className="tabular-nums">{graph.nodes.length}</p>

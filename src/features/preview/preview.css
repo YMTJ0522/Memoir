@@ -85,6 +85,336 @@
   content: none;
 }
 
+/* ==highlight== inline marks (toolbar highlight button). */
+.memoir-preview mark[data-highlight] {
+  padding: 0.08em 0.24em;
+  border-radius: 0.28em;
+  background: color-mix(in srgb, var(--memoir-accent) 22%, transparent);
+  color: inherit;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* ::: containers (toolbar callout / details / tabs). */
+.memoir-preview .memoir-callout {
+  margin: 1.4em 0;
+  padding: 0.85em 1em;
+  border: 1px solid color-mix(in srgb, var(--memoir-accent) 28%, var(--memoir-border));
+  border-left: 3px solid var(--memoir-accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--memoir-accent) 7%, var(--memoir-panel));
+}
+
+.memoir-preview .memoir-callout > .memoir-callout-title {
+  display: block;
+  margin: 0 0 0.35em;
+  font-size: 0.86em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--memoir-accent);
+}
+
+.memoir-preview .memoir-callout > :last-child {
+  margin-bottom: 0;
+}
+
+.memoir-preview .memoir-callout[data-callout="note"] {
+  --memoir-accent: color-mix(in srgb, var(--memoir-text) 55%, var(--memoir-muted));
+}
+
+.memoir-preview .memoir-callout[data-callout="tip"] {
+  --memoir-accent: #43a96f;
+}
+
+.memoir-preview .memoir-callout[data-callout="warning"] {
+  --memoir-accent: #d9a13b;
+}
+
+.memoir-preview .memoir-callout[data-callout="danger"] {
+  --memoir-accent: #d05b5b;
+}
+
+.memoir-preview .memoir-details {
+  margin: 1.4em 0;
+  border: 1px solid var(--memoir-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--memoir-panel) 82%, var(--memoir-canvas));
+}
+
+.memoir-preview .memoir-details-summary {
+  cursor: pointer;
+  padding: 0.6em 1em;
+  font-weight: 600;
+  font-size: 0.95em;
+  color: var(--memoir-text);
+  user-select: none;
+}
+
+.memoir-preview .memoir-details[open] .memoir-details-summary {
+  border-bottom: 1px solid var(--memoir-border);
+}
+
+.memoir-preview .memoir-details > :not(.memoir-details-summary) {
+  margin-inline: 1em;
+}
+
+.memoir-preview .memoir-details > :last-child {
+  margin-bottom: 1em;
+}
+
+.memoir-preview .memoir-tabs {
+  margin: 1.4em 0;
+  border: 1px solid var(--memoir-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.memoir-preview .memoir-tab {
+  padding: 0.7em 1em;
+  background: color-mix(in srgb, var(--memoir-panel) 82%, var(--memoir-canvas));
+}
+
+.memoir-preview .memoir-tab + .memoir-tab {
+  border-top: 1px solid var(--memoir-border);
+}
+
+.memoir-preview .memoir-tab > .memoir-tab-label {
+  display: block;
+  margin: 0 0 0.4em;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: var(--memoir-accent);
+}
+
+.memoir-preview .memoir-tab > :last-child {
+  margin-bottom: 0;
+}
+
+/* Interactive tab groups (space-syntax `:::: tabs`), inkstone .markdown-tabs. */
+.memoir-preview .memoir-tabs-interactive {
+  margin: 0.95em 0;
+  background: color-mix(in srgb, var(--memoir-panel) 82%, var(--memoir-canvas));
+}
+
+.memoir-preview .memoir-tab-list {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 5px 6px 0;
+  border-bottom: 1px solid var(--memoir-border);
+  background: color-mix(in srgb, var(--memoir-canvas) 55%, var(--memoir-panel));
+}
+
+.memoir-preview .memoir-tab-button {
+  flex: none;
+  padding: 0.42em 0.72em 0.5em;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--memoir-muted);
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.memoir-preview .memoir-tab-button[aria-selected="true"] {
+  border-bottom-color: var(--memoir-accent);
+  color: var(--memoir-text);
+  font-weight: 600;
+}
+
+.memoir-preview .memoir-tabs-interactive .memoir-tab {
+  display: block;
+  padding: 0.8em 0.9em 0.15em;
+  background: transparent;
+}
+
+.memoir-preview .memoir-tabs-interactive .memoir-tab + .memoir-tab {
+  border-top: 0;
+}
+
+.memoir-preview .memoir-tabs-interactive .memoir-tab[hidden] {
+  display: none;
+}
+
+/* `#tag` inline tags (toolbar tag button), inkstone .inline-tag. */
+.memoir-preview .inline-tag {
+  color: var(--memoir-accent);
+  background: color-mix(in srgb, var(--memoir-accent) 12%, transparent);
+  padding: 0.06em 0.4em;
+  border-radius: 999px;
+  font-size: 0.9em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.memoir-preview .inline-tag:hover {
+  background: color-mix(in srgb, var(--memoir-accent) 22%, transparent);
+}
+
+/* `((block-id))` references, inkstone .block-reference. */
+.memoir-preview a.block-reference {
+  color: var(--memoir-accent);
+  text-decoration: none;
+  border-bottom: 1px dashed color-mix(in srgb, var(--memoir-accent) 46%, transparent);
+  cursor: pointer;
+}
+
+.memoir-preview a.block-reference:hover {
+  border-bottom-style: solid;
+}
+
+/* Enhanced code fences (toolbar 增强代码块), inkstone .code-block: an outer wrapper div holds the header plus an inner pre with the code itself. */
+.memoir-preview div.memoir-code-block {
+  position: relative;
+  display: block;
+  margin: 0.9em 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--memoir-border) 88%, var(--memoir-muted));
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.memoir-preview .memoir-code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 28px;
+  padding: 0 7px 0 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--memoir-border) 88%, var(--memoir-muted));
+  background: color-mix(in srgb, var(--memoir-panel) 60%, var(--memoir-canvas));
+}
+
+.memoir-preview .memoir-code-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--memoir-muted);
+  font-family: var(--memoir-mono-font);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memoir-preview .memoir-code-lang {
+  margin-left: auto;
+  font-family: var(--memoir-mono-font);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--memoir-muted);
+}
+
+.memoir-preview .memoir-code-title + .memoir-code-lang {
+  margin-right: 8px;
+}
+
+.memoir-preview .memoir-code-copy {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--memoir-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--memoir-motion-fast) var(--memoir-ease), background-color var(--memoir-motion-fast) var(--memoir-ease), color var(--memoir-motion-fast) var(--memoir-ease);
+}
+
+.memoir-preview div.memoir-code-block:hover .memoir-code-copy,
+.memoir-preview .memoir-code-copy:focus-visible {
+  opacity: 1;
+}
+
+.memoir-preview .memoir-code-copy:hover {
+  background: color-mix(in srgb, var(--memoir-muted) 14%, transparent);
+  color: var(--memoir-text);
+}
+
+.memoir-preview .memoir-code-copy.copied {
+  color: #43a96f;
+  opacity: 1;
+}
+
+.memoir-preview div.memoir-code-block pre.memoir-code-pre {
+  margin: 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-x: auto;
+}
+
+.memoir-preview div.memoir-code-block pre.memoir-code-pre > code {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.88em;
+}
+
+.memoir-preview div.memoir-code-block pre.memoir-code-pre .line {
+  display: inline-block;
+  width: 100%;
+  min-height: 1lh;
+  vertical-align: top;
+}
+
+.memoir-preview div.memoir-code-block.has-line-numbers pre.memoir-code-pre {
+  padding-left: 0;
+}
+
+.memoir-preview div.memoir-code-block.has-line-numbers .line::before {
+  display: inline-block;
+  width: 3.4em;
+  margin-right: 1em;
+  padding-right: 0.75em;
+  color: color-mix(in srgb, var(--memoir-muted) 72%, transparent);
+  content: attr(data-line-number);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  user-select: none;
+}
+
+.memoir-preview div.memoir-code-block pre.memoir-code-pre .line.highlighted {
+  background: color-mix(in srgb, var(--memoir-accent) 12%, transparent);
+  box-shadow: inset 2px 0 var(--memoir-accent);
+}
+
+/* ![[note]] embed cards. */
+.memoir-preview .memoir-wiki-embed {
+  display: block;
+  margin: 1.4em 0;
+  border: 1px solid var(--memoir-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--memoir-panel) 70%, var(--memoir-canvas));
+  padding: 0.2em 1em;
+}
+
+.memoir-preview .memoir-wiki-embed .memoir-wiki-embed-article {
+  max-width: none;
+  padding: 0.4em 0 0.8em;
+}
+
+.memoir-preview .memoir-wiki-embed-loading {
+  display: block;
+  padding: 0.7em 0;
+  font-size: 0.85em;
+  color: var(--memoir-muted);
+}
+
+.memoir-preview .memoir-wiki-embed-missing {
+  display: inline-block;
+  margin: 0.1em 0;
+}
+
 .memoir-preview li.task-list-item > p {
   margin: 0;
 }
@@ -447,6 +777,135 @@
   box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
 }
 
+/* Local video attachments rendered from `![](movie.mp4)` markdown. */
+.memoir-preview .memoir-preview-video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 1.4em auto;
+  border: 1px solid var(--memoir-border);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 4%);
+  box-shadow: 0 8px 28px rgb(46 40 31 / 8%);
+}
+
+[data-theme="dark"] .memoir-preview .memoir-preview-video {
+  background: rgb(255 255 255 / 4%);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
+}
+
+/* Local audio attachments rendered from `![](voice.mp3)` markdown. */
+.memoir-preview .memoir-preview-audio {
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin: 1.2em auto;
+  border: 1px solid var(--memoir-border);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 4%);
+}
+
+[data-theme="dark"] .memoir-preview .memoir-preview-audio {
+  background: rgb(255 255 255 / 4%);
+}
+
+/* Collapsible frontmatter metadata card above the rendered body
+ * (inkstone `.frontmatter-properties` parity). */
+.memoir-preview .memoir-frontmatter-properties {
+  margin: 0 0 1.25em;
+  border: 1px solid var(--memoir-border);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 3%);
+  font-size: 0.92em;
+}
+
+[data-theme="dark"] .memoir-preview .memoir-frontmatter-properties {
+  background: rgb(255 255 255 / 4%);
+}
+
+.memoir-preview .memoir-frontmatter-properties > summary {
+  padding: 0.45em 0.7em;
+  color: var(--memoir-muted, inherit);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.memoir-preview .memoir-frontmatter-properties > summary::-webkit-details-marker {
+  display: none;
+}
+
+.memoir-preview .memoir-frontmatter-properties > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.45em;
+  transition: transform 0.15s ease;
+}
+
+.memoir-preview .memoir-frontmatter-properties[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.memoir-preview .memoir-frontmatter-properties > summary + dl {
+  border-top: 1px solid color-mix(in srgb, var(--memoir-border) 70%, transparent);
+}
+
+.memoir-preview .memoir-frontmatter-properties dl {
+  margin: 0;
+  padding: 0.45em 0.9em 0.7em;
+}
+
+/* Fixed label column keeps every row's value on one shared left edge. */
+.memoir-preview .memoir-frontmatter-row {
+  display: grid;
+  grid-template-columns: 5.5em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.85em;
+  padding: 0.28em 0;
+}
+
+.memoir-preview .memoir-frontmatter-row dt {
+  color: var(--memoir-muted, inherit);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.memoir-preview .memoir-frontmatter-row dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.memoir-preview .memoir-frontmatter-values {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1em;
+}
+
+.memoir-preview .memoir-frontmatter-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.12em 0.4em 0.12em 0;
+  padding: 0.08em 0.6em;
+  border: 1px solid color-mix(in srgb, var(--memoir-border) 80%, transparent);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 4%);
+  font-size: 0.88em;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .memoir-preview .memoir-frontmatter-chip {
+  background: rgb(255 255 255 / 8%);
+}
+
+.memoir-preview .memoir-frontmatter-empty {
+  color: var(--memoir-muted, inherit);
+}
+
 .memoir-preview [align="center"] {
   text-align: center;
 }
@@ -510,4 +969,15 @@
 .memoir-pdf-preview p,
 .memoir-pdf-preview li {
   color: #222222;
+}
+
+/* Mermaid dark-mode edge labels: the default grey background (#585858)
+ * sits too close to the dark canvas, making branch labels ("是"/"否")
+ * blend into the background. Using the same dark fill as nodes keeps the
+ * diagram palette consistent and the labels legible. */
+[data-theme="dark"] .memoir-preview .edgeLabel,
+[data-theme="dark"] .memoir-preview .edgeLabel span,
+[data-theme="dark"] .memoir-preview .labelBkg {
+  background-color: #2d2d28 !important;
+  color: #f0eee8 !important;
 }

@@ -210,7 +210,7 @@ export function CloudSyncPanel() {
   };
 
   return (
-    <div className="cloud-sync-panel memoir-fade-in flex min-h-0 flex-1 flex-col">
+    <div className="cloud-sync-panel memoir-panel-in flex min-h-0 flex-1 flex-col">
       <header
         className="flex h-14 shrink-0 items-center justify-between gap-2 px-4"
         data-tauri-drag-region={desktop ? "" : undefined}

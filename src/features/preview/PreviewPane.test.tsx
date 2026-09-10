@@ -109,6 +109,79 @@ describe("PreviewPane link cards", () => {
   });
 });
 
+describe("PreviewPane frontmatter properties", () => {
+  it("renders a collapsible metadata card for a leading frontmatter block", async () => {
+    setGatewaysForTests(createMockGateways());
+    const view = render(
+      <PreviewPane
+        activePath="tasks.md"
+        content={"---\ntitle: Plan\nauthor: Ada\ntags: [roadmap, team]\n---\n\n# Plan\n\nBody.\n"}
+        note={note}
+        onContentChange={() => undefined}
+        root="/notes"
+      />,
+    );
+
+    const properties = await waitFor(() => {
+      const panel = view.container.querySelector("details.memoir-frontmatter-properties");
+      expect(panel).not.toBeNull();
+      return panel as HTMLElement;
+    });
+    expect(properties.querySelector("summary")?.textContent).toContain("属性");
+    expect(properties).not.toHaveAttribute("open");
+
+    const user = userEvent.setup();
+    await user.click(properties.querySelector("summary")!);
+    expect(properties).toHaveAttribute("open");
+    // Standard keys get localized labels (no raw English "title"/"tags").
+    expect(properties.textContent).toContain("标题");
+    expect(properties.textContent).toContain("Plan");
+    expect(properties.textContent).toContain("作者");
+    expect(properties.textContent).toContain("Ada");
+    const chips = [...properties.querySelectorAll(".memoir-frontmatter-chip")];
+    expect(chips.map((chip) => chip.textContent)).toEqual(["roadmap", "team"]);
+  });
+
+  it("shows localized frontmatter labels without the raw key", async () => {
+    setGatewaysForTests(createMockGateways());
+    const view = render(
+      <PreviewPane
+        activePath="tasks.md"
+        content={"---\ntitle: Plan\ntags: [a]\n---\n\n# Plan\n"}
+        note={note}
+        onContentChange={() => undefined}
+        root="/notes"
+      />,
+    );
+    const properties = await waitFor(() => {
+      const panel = view.container.querySelector("details.memoir-frontmatter-properties");
+      expect(panel).not.toBeNull();
+      return panel as HTMLElement;
+    });
+    const user = userEvent.setup();
+    await user.click(properties.querySelector("summary")!);
+    const keys = [...properties.querySelectorAll("dt")].map((dt) => dt.textContent);
+    expect(keys).toEqual(["标题", "标签"]);
+  });
+
+  it("omits the card when the note has no frontmatter block", async () => {
+    setGatewaysForTests(createMockGateways());
+    const view = render(
+      <PreviewPane
+        activePath="tasks.md"
+        content={"# Just a heading\n\nBody.\n"}
+        note={note}
+        onContentChange={() => undefined}
+        root="/notes"
+      />,
+    );
+    await waitFor(() => {
+      expect(view.getByRole("heading", { name: "Just a heading" })).toBeInTheDocument();
+    });
+    expect(view.container.querySelector("details.memoir-frontmatter-properties")).toBeNull();
+  });
+});
+
 describe("PreviewPane wiki links", () => {
   it("opens a resolved wiki link in the workspace", async () => {
     const gateways = createMockGateways();
@@ -430,5 +503,39 @@ describe("PreviewPane images", () => {
       "src",
       "/notes/attachments/截图.png",
     );
+  });
+
+  it("renders local video attachments as <video> elements", () => {
+    const view = render(
+      <PreviewPane
+        activePath="demo.md"
+        content={"![产品演示](attachments/2026-09/demo.mp4)\n"}
+        note={{ ...note, relativePath: "demo.md", fileName: "demo.md", title: "Demo" }}
+        onContentChange={() => undefined}
+        root="/notes"
+      />,
+    );
+
+    const video = view.container.querySelector("video.memoir-preview-video");
+    expect(video).not.toBeNull();
+    expect(video).toHaveAttribute("src", "/notes/attachments/2026-09/demo.mp4");
+    expect(video).toHaveAttribute("controls");
+    // The same href must not also render an <img>.
+    expect(view.container.querySelectorAll("img")).toHaveLength(0);
+  });
+
+  it("keeps remote video-looking hrefs as images", () => {
+    const view = render(
+      <PreviewPane
+        activePath="demo.md"
+        content={"![remote](https://example.com/clip.mp4)\n"}
+        note={{ ...note, relativePath: "demo.md", fileName: "demo.md", title: "Demo" }}
+        onContentChange={() => undefined}
+        root="/notes"
+      />,
+    );
+
+    expect(view.container.querySelector("video")).toBeNull();
+    expect(view.getAllByRole("img")).toHaveLength(1);
   });
 });

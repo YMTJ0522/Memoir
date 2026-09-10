@@ -2,7 +2,9 @@ import { ArrowUpRight, GitBranch, Maximize2, Network, RotateCcw } from "lucide-r
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton, Toggle } from "../../components/ui";
 import { noteStem } from "../../domain/note-links";
+import { isTauriRuntime } from "../../platform/runtime";
 import { useAppStore } from "../../store/app-store";
+import { handleWindowDragMouseDown } from "../window/window-drag";
 import { useI18n } from "../../i18n/react";
 import { degreesFromEdges } from "./force-layout";
 import { NoteGraphScene } from "./graph-scene";
@@ -112,7 +114,11 @@ export default function NoteGraphView() {
 
   return (
     <section aria-label={t("graph.label")} className="note-graph-view flex h-full min-h-0 min-w-0 flex-col bg-canvas">
-      <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-1.5">
+      <header
+        className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-1.5"
+        data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
+        onMouseDown={handleWindowDragMouseDown}
+      >
         <div className="min-w-0">
           <h2 className="truncate text-[13px] font-semibold tracking-[-0.02em] text-text">
             {t("graph.label")}
