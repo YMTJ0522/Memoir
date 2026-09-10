@@ -35,7 +35,6 @@ import { useAppStore } from "../store/app-store";
 const SettingsDialog = lazy(() => import("../features/settings/SettingsDialog"));
 const EditorWorkspace = lazy(() => import("../features/editor/EditorWorkspace"));
 const NoteGraphView = lazy(() => import("../features/graph/NoteGraphView"));
-const AiChatPanel = lazy(() => import("../features/ai/AiChatPanel"));
 
 function EmptyState() {
   const openWorkspace = useAppStore((state) => state.openWorkspace);
@@ -165,14 +164,16 @@ function WorkspaceLayout({
             onInsertAttachment={(markdown) => editorRef.current?.insertText(markdown)}
             onRename={openRename}
           />
-          <LayoutResizeHandle
-            defaultValue={DEFAULT_LIBRARY_WIDTH}
-            label={t("layout.resizeLibrary")}
-            max={libraryDragMax}
-            min={Math.min(MIN_LIBRARY_WIDTH, columns.library)}
-            onChange={(libraryWidth) => setLayout({ libraryWidth })}
-            value={columns.library}
-          />
+          {libraryPanelMode !== "ai" && (
+            <LayoutResizeHandle
+              defaultValue={DEFAULT_LIBRARY_WIDTH}
+              label={t("layout.resizeLibrary")}
+              max={libraryDragMax}
+              min={Math.min(MIN_LIBRARY_WIDTH, columns.library)}
+              onChange={(libraryWidth) => setLayout({ libraryWidth })}
+              value={columns.library}
+            />
+          )}
         </div>
         <Suspense
           fallback={
@@ -183,17 +184,6 @@ function WorkspaceLayout({
         >
           {libraryPanelMode === "graph" ? (
             <NoteGraphView />
-          ) : libraryPanelMode === "ai" ? (
-            <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_340px] max-[1020px]:grid-cols-[minmax(0,1fr)_300px] max-[760px]:block">
-              <EditorWorkspace
-                className="max-[760px]:grid max-[760px]:min-h-[calc(100vh-96px)]"
-                isDark={isDark}
-                onDelete={openDelete}
-                onRename={openRename}
-                ref={editorRef}
-              />
-              <AiChatPanel className="min-h-0 min-w-0 border-l border-border max-[760px]:fixed max-[760px]:bottom-0 max-[760px]:right-0 max-[760px]:top-12 max-[760px]:z-20 max-[760px]:w-[min(92vw,360px)] max-[760px]:border-l max-[760px]:border-border max-[760px]:shadow-2xl" />
-            </div>
           ) : (
             <EditorWorkspace
               className="max-[760px]:grid max-[760px]:min-h-[calc(100vh-48px)]"

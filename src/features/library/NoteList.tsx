@@ -7,10 +7,11 @@ import {
   ListTree,
   Plus,
   Search,
+  Sparkles,
   Star,
   Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   ContextMenu,
   ContextMenuItem,
@@ -38,6 +39,8 @@ import { NoteOutline } from "./NoteOutline";
 import type { NoteSortDirection, NoteSortField } from "../../domain/settings";
 import { extractHeadings, noteDisplayName, parseNote, sortLibraryNotes } from "./note-utils";
 import type { NoteMeta } from "../../domain/notes";
+
+const AiChatPanel = lazy(() => import("../ai/AiChatPanel"));
 
 export const NOTE_LIST_VIRTUAL_THRESHOLD = 80;
 const VIRTUAL_OVERSCAN = 6;
@@ -123,6 +126,11 @@ export function NoteList({
                     ? t("library.trash")
                     : t("library.index")}
             </h2>
+          ) : mode === "ai" ? (
+            <h2 className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.02em] text-text">
+              <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden strokeWidth={1.8} />
+              {t("ai.panelTitle")}
+            </h2>
           ) : (
             <div className="view-switcher library-mode-switcher flex items-center rounded-lg p-0.5">
               <IconButton
@@ -155,7 +163,7 @@ export function NoteList({
             <IconButton label={t("library.importAttachment")} onClick={() => void importAttachments()}>
               <Upload className="h-4 w-4" />
             </IconButton>
-          ) : mode === "index" || mode === "graph" || mode === "trash" ? (
+          ) : mode === "index" || mode === "graph" || mode === "trash" || mode === "ai" ? (
             <span aria-hidden className="h-8 w-8" />
           ) : mode === "notes" ? (
             <IconButton label={t("library.newNote")} onClick={() => onCreate()}>
@@ -222,6 +230,16 @@ export function NoteList({
         </div>
       ) : mode === "links" ? (
         <NoteLinksPanel />
+      ) : mode === "ai" ? (
+        <Suspense
+          fallback={
+            <div className="grid min-h-0 flex-1 place-items-center text-sm text-muted">
+              {t("app.loadingWorkspace")}
+            </div>
+          }
+        >
+          <AiChatPanel className="min-h-0 min-w-0 flex-1" />
+        </Suspense>
       ) : (
         <NoteOutline documentKey={activePath} headings={headings} />
       )}

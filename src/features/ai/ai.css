@@ -6,10 +6,15 @@
 
 /* session picker (header dropdown, compact) */
 
+.ai-session-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .ai-session-picker .memoir-select-field {
   height: 28px;
   min-height: 28px;
-  width: 150px;
+  width: 100%;
   padding: 0 8px;
   font-size: 12px;
 }
@@ -43,16 +48,16 @@
 .ai-empty-badge {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
   color: var(--memoir-accent);
   background: color-mix(in srgb, var(--memoir-accent) 12%, transparent);
 }
 
 .ai-empty-badge svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 
 .ai-quick-grid {
@@ -64,12 +69,13 @@
 .ai-quick-tile {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 6px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 8px 8px;
   border: 1px solid var(--memoir-border);
-  border-radius: 11px;
-  font-size: 12.5px;
+  border-radius: 10px;
+  font-size: 12px;
   color: var(--memoir-text);
   background: var(--memoir-elevated);
   transition: border-color var(--memoir-motion-fast) var(--memoir-ease),

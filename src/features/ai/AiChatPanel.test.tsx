@@ -51,7 +51,6 @@ describe("AiChatPanel", () => {
   it("shows the setup card when AI is not configured", () => {
     setGatewaysForTests(createMockGateways());
     const view = render(<AiChatPanel />);
-    expect(view.getByRole("heading", { name: "AI 编写" })).toBeInTheDocument();
     expect(view.getByText("AI 编写尚未配置")).toBeInTheDocument();
     expect(view.getByRole("button", { name: "去设置" })).toBeInTheDocument();
   });

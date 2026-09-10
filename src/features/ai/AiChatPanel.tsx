@@ -377,14 +377,12 @@ export default function AiChatPanel({ className }: { className?: string }) {
     <section aria-label={t("ai.panelTitle")} className={className}>
       <div className="ai-chat-panel flex h-full min-h-0 flex-col bg-canvas">
         <header
-          className="flex h-12 shrink-0 items-center gap-1.5 border-b border-border pl-3 pr-2"
+          className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border pl-3 pr-2"
           data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
           onMouseDown={handleWindowDragMouseDown}
         >
-          <Sparkles className="h-4 w-4 shrink-0 text-accent" aria-hidden strokeWidth={1.8} />
-          <h2 className="shrink-0 text-[13.5px] font-semibold text-text">{t("ai.panelTitle")}</h2>
           <Select
-            className="ai-session-picker ml-auto min-w-0"
+            className="ai-session-picker min-w-0"
             label={t("ai.sessionSelect")}
             onChange={handleSessionSelect}
             options={sessionOptions}
@@ -392,17 +390,17 @@ export default function AiChatPanel({ className }: { className?: string }) {
           />
           {activeSession && aiSessions.length > 0 && (
             <IconButton
-              className="h-7 w-7"
+              className="h-7 w-7 shrink-0"
               label={t("ai.sessionDelete")}
               onClick={() => handleDeleteSession(activeSession)}
             >
               <Trash2 className="h-4 w-4" />
             </IconButton>
           )}
-          <IconButton className="h-7 w-7" label={t("ai.newChat")} onClick={startNewChat}>
+          <IconButton className="h-7 w-7 shrink-0" label={t("ai.newChat")} onClick={startNewChat}>
             <MessageSquarePlus className="h-4 w-4" />
           </IconButton>
-          <IconButton className="h-7 w-7" label={t("ai.closePanel")} onClick={closePanel}>
+          <IconButton className="h-7 w-7 shrink-0" label={t("ai.closePanel")} onClick={closePanel}>
             <X className="h-4 w-4" />
           </IconButton>
         </header>

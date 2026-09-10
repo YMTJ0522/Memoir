@@ -144,7 +144,8 @@ describe("LibrarySidebar folders", () => {
 
     await user.click(view.getByRole("button", { name: "AI 编写" }));
     expect(useAppStore.getState().libraryPanelMode).toBe("ai");
-    expect(useAppStore.getState().mobilePanel).toBe("editor");
+    // The AI panel now lives in the middle column, so the mobile panel switches to "library".
+    expect(useAppStore.getState().mobilePanel).toBe("library");
     expect(view.getByRole("button", { name: "AI 编写" })).toHaveAttribute("aria-current", "page");
   });
 
