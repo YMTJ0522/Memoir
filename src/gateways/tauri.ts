@@ -5,12 +5,20 @@ import type { AppState, LegacyStatePayload, MigrationResult } from "../domain/ap
 import type { WorkspaceLayoutState } from "../domain/layout";
 import type { AppUpdateCheck } from "../domain/app-update";
 import type { AttachmentFile, SaveAttachmentInput } from "../domain/attachments";
-import { ATTACHMENT_EXTENSIONS } from "../domain/attachments";
+import { ATTACHMENT_EXTENSIONS, ARCHIVE_EXTENSIONS, AUDIO_EXTENSIONS, DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "../domain/attachments";
 import type { FolderAppearance } from "../domain/folders";
 import type { WorkspaceIndexInfo } from "../domain/index-info";
 import type { NoteGraph } from "../domain/note-links";
-import type { LibraryPage, LibraryQuery, RawNoteFile, RenamedNote } from "../domain/notes";
+import type {
+  LibraryPage,
+  LibraryQuery,
+  NoteVersion,
+  NoteVersionMeta,
+  RawNoteFile,
+  RenamedNote,
+} from "../domain/notes";
 import type { AppSettings } from "../domain/settings";
+import type { TrashEntry } from "../domain/trash";
 import {
   CLOUD_SYNC_PROGRESS_EVENT,
   mergeCloudSyncProgress,
@@ -21,7 +29,18 @@ import {
   type CloudSyncRunResult,
 } from "../domain/cloud-sync";
 import { mapGatewayError } from "../domain/errors";
+import {
+  convertDocxHtml,
+  convertImportedSource,
+  importSourceExtension,
+  type ImportSourceExtension,
+} from "../features/import/import-article";
+import { EXPORT_FILTERS, type ExportDialogOptions, type ImportSourcePayload } from "./contracts";
 import type {
+  AiChatCompletionInput,
+  AiChatReply,
+  AiGateway,
+  AiSessionRecord,
   AppGateways,
   CloudSyncGateway,
   CreateNoteInput,
@@ -35,6 +54,26 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   } catch (error) {
     throw mapGatewayError(error);
   }
+}
+
+/** Read → convert → write one article import; shared by dialog and drop paths. */
+async function importArticleFromSource(
+  root: string,
+  source: ImportSourcePayload,
+  extension: ImportSourceExtension,
+): Promise<RawNoteFile> {
+  const text =
+    extension === "docx" ? await convertDocxHtml(source.bytesBase64) : source.text;
+  const article = convertImportedSource({
+    fileName: source.fileName,
+    extension,
+    text,
+  });
+  return call<RawNoteFile>("import_note", {
+    root,
+    title: article.title,
+    markdown: article.markdown,
+  });
 }
 
 export class TauriWorkspaceGateway implements WorkspaceGateway {
@@ -79,12 +118,51 @@ export class TauriWorkspaceGateway implements WorkspaceGateway {
     return call<RawNoteFile>("create_note", { root, title, extension, folder, tags });
   }
 
+  async importArticles(root: string) {
+    const selected = await openDialog({
+      multiple: true,
+      filters: [
+        { name: "Articles", extensions: ["txt", "md", "markdown", "html", "htm", "docx"] },
+      ],
+    });
+    if (!selected) return [];
+    const paths = Array.isArray(selected) ? selected : [selected];
+    return this.importArticlesFromPaths(root, paths);
+  }
+
+  async importArticlesFromPaths(root: string, sourcePaths: string[]): Promise<RawNoteFile[]> {
+    const imported: RawNoteFile[] = [];
+    for (const sourcePath of sourcePaths) {
+      const source = await call<ImportSourcePayload>("read_import_source", { sourcePath });
+      const extension = importSourceExtension(source.fileName);
+      if (!extension) continue;
+      imported.push(await importArticleFromSource(root, source, extension));
+    }
+    return imported;
+  }
+
   renameNote(root: string, oldRelativePath: string, newRelativePath: string) {
     return call<RenamedNote>("rename_note", { root, oldRelativePath, newRelativePath });
   }
 
   deleteNote(root: string, relativePath: string) {
     return call<string>("delete_note", { root, relativePath });
+  }
+
+  listTrash(root: string) {
+    return call<TrashEntry[]>("list_trash", { root });
+  }
+
+  restoreTrashItem(root: string, trashName: string) {
+    return call<string>("restore_trash_item", { root, trashName });
+  }
+
+  purgeTrashItem(root: string, trashName: string) {
+    return call<void>("purge_trash_item", { root, trashName });
+  }
+
+  emptyTrash(root: string) {
+    return call<void>("empty_trash", { root });
   }
 
   scanAttachments(root: string) {
@@ -103,7 +181,14 @@ export class TauriWorkspaceGateway implements WorkspaceGateway {
   async importAttachments(root: string) {
     const selected = await openDialog({
       multiple: true,
-      filters: [{ name: "Images", extensions: [...ATTACHMENT_EXTENSIONS] }],
+      filters: [
+        { name: "Attachments", extensions: [...ATTACHMENT_EXTENSIONS] },
+        { name: "Images", extensions: [...IMAGE_EXTENSIONS] },
+        { name: "Videos", extensions: [...VIDEO_EXTENSIONS] },
+        { name: "Audio", extensions: [...AUDIO_EXTENSIONS] },
+        { name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] },
+        { name: "Archives", extensions: [...ARCHIVE_EXTENSIONS] },
+      ],
     });
     if (!selected) return [];
     const paths = Array.isArray(selected) ? selected : [selected];
@@ -164,8 +249,30 @@ export class TauriWorkspaceGateway implements WorkspaceGateway {
     return selected.toLowerCase().endsWith(".pdf") ? selected : `${selected}.pdf`;
   }
 
+  async chooseExportFile({ defaultPath, title, format }: ExportDialogOptions) {
+    const filter = EXPORT_FILTERS[format];
+    const extension = filter.extensions[0];
+    const selected = await saveDialog({
+      defaultPath,
+      filters: [filter],
+      title: title || `Export ${filter.name}`,
+    });
+    if (typeof selected !== "string" || !selected) return null;
+    return selected.toLowerCase().endsWith(`.${extension}`) ? selected : `${selected}.${extension}`;
+  }
+
   writeExportFile(path: string, bytesBase64: string) {
     return call<void>("write_export_file", { path, bytesBase64 });
+  }
+
+  writeExportText(path: string, text: string, mime: string) {
+    const bytes = new TextEncoder().encode(text);
+    const chunkSize = 0x8000;
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+    return call<void>("write_export_file", { path, bytesBase64: btoa(binary), mime });
   }
 }
 
@@ -186,6 +293,10 @@ export class TauriPersistenceGateway implements PersistenceGateway {
       sidebarCollapsed,
       layout,
     });
+  }
+
+  saveAiSessions(sessions: AiSessionRecord[], activeAiSessionId: string | null) {
+    return call<void>("save_ai_sessions", { sessions, activeAiSessionId });
   }
 
   setFavorite(workspaceRoot: string, relativePath: string, favorite: boolean) {
@@ -214,6 +325,34 @@ export class TauriPersistenceGateway implements PersistenceGateway {
 
   draftsExist(workspaceRoot: string, relativePaths: string[]) {
     return call<string[]>("drafts_exist", { workspaceRoot, relativePaths });
+  }
+
+  listNoteVersions(workspaceRoot: string, relativePath: string) {
+    return call<NoteVersionMeta[]>("list_note_versions", { workspaceRoot, relativePath });
+  }
+
+  getNoteVersion(workspaceRoot: string, relativePath: string, versionId: string) {
+    return call<NoteVersion>("get_note_version", {
+      workspaceRoot,
+      relativePath,
+      versionId,
+    });
+  }
+
+  snapshotNoteVersion(
+    workspaceRoot: string,
+    relativePath: string,
+    oldContent: string,
+    newContent: string,
+    preserve?: boolean,
+  ) {
+    return call<void>("snapshot_note_version", {
+      workspaceRoot,
+      relativePath,
+      oldContent,
+      newContent,
+      preserve,
+    });
   }
 
   migrateLegacyState(payload: LegacyStatePayload) {
@@ -256,10 +395,54 @@ export class TauriCloudSyncGateway implements CloudSyncGateway {
   }
 }
 
+const AI_CHAT_DELTA_EVENT = "ai-chat-delta";
+const AI_CHAT_REASONING_EVENT = "ai-chat-reasoning";
+
+export class TauriAiGateway implements AiGateway {
+  chatCompletion(input: AiChatCompletionInput) {
+    return call<string>("chat_completion", { input });
+  }
+
+  async chatCompletionStream(
+    input: AiChatCompletionInput,
+    requestId: string,
+    onDelta: (piece: string) => void,
+    onReasoning: (piece: string) => void,
+  ): Promise<AiChatReply> {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlistenDelta = await listen<{ requestId: string; piece: string }>(
+      AI_CHAT_DELTA_EVENT,
+      (event) => {
+        if (event.payload.requestId === requestId) onDelta(event.payload.piece);
+      },
+    );
+    const unlistenReasoning = await listen<{ requestId: string; piece: string }>(
+      AI_CHAT_REASONING_EVENT,
+      (event) => {
+        if (event.payload.requestId === requestId) onReasoning(event.payload.piece);
+      },
+    );
+    try {
+      return await call<AiChatReply>("chat_completion_stream", {
+        requestId,
+        input,
+      });
+    } finally {
+      unlistenDelta();
+      unlistenReasoning();
+    }
+  }
+
+  testConnection() {
+    return call<string>("test_ai_connection");
+  }
+}
+
 export function createTauriGateways(): AppGateways {
   return {
     workspace: new TauriWorkspaceGateway(),
     persistence: new TauriPersistenceGateway(),
     cloudSync: new TauriCloudSyncGateway(),
+    ai: new TauriAiGateway(),
   };
 }

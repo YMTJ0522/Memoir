@@ -16,6 +16,7 @@ pub struct NoteRow {
     pub parse_truncated: i64,
     pub title: String,
     pub excerpt: String,
+    pub body: String,
     pub tags: Vec<String>,
     pub links: Vec<RawNoteLink>,
 }
@@ -31,6 +32,8 @@ impl NoteRow {
             title: self.title.clone(),
             tags: self.tags.clone(),
             excerpt: self.excerpt.clone(),
+            body: self.body.clone(),
+            snippet: String::new(),
         }
     }
 }
@@ -60,6 +63,7 @@ pub fn note_row(
     parse_truncated: bool,
     title: String,
     excerpt: String,
+    body: String,
     tags: &[String],
 ) -> NoteRow {
     let folder = folder_of(&relative_path);
@@ -74,6 +78,7 @@ pub fn note_row(
         parse_truncated: i64::from(parse_truncated),
         title,
         excerpt,
+        body,
         tags: tags.to_vec(),
         links: Vec::new(),
     }
@@ -198,8 +203,8 @@ pub fn upsert_note(conn: &Connection, row: &NoteRow) -> rusqlite::Result<i64> {
         "
         INSERT INTO notes (
             relative_path, file_name, extension, folder, modified_ms, size,
-            parse_truncated, title, excerpt, indexed_at_ms
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            parse_truncated, title, excerpt, body, indexed_at_ms
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         ON CONFLICT(relative_path) DO UPDATE SET
             file_name = excluded.file_name,
             extension = excluded.extension,
@@ -209,6 +214,7 @@ pub fn upsert_note(conn: &Connection, row: &NoteRow) -> rusqlite::Result<i64> {
             parse_truncated = excluded.parse_truncated,
             title = excluded.title,
             excerpt = excluded.excerpt,
+            body = excluded.body,
             indexed_at_ms = excluded.indexed_at_ms
         ",
         params![
@@ -221,6 +227,7 @@ pub fn upsert_note(conn: &Connection, row: &NoteRow) -> rusqlite::Result<i64> {
             row.parse_truncated,
             row.title,
             row.excerpt,
+            row.body,
             now_ms()
         ],
     )?;
@@ -234,6 +241,7 @@ pub fn upsert_note(conn: &Connection, row: &NoteRow) -> rusqlite::Result<i64> {
         &row.excerpt,
         &row.relative_path,
         &row.tags,
+        &row.body,
     )?;
     Ok(id)
 }
@@ -275,8 +283,9 @@ pub fn cas_update(
             parse_truncated = ?6,
             title = ?7,
             excerpt = ?8,
-            indexed_at_ms = ?9
-         WHERE relative_path = ?10 AND modified_ms = ?11 AND size = ?12
+            body = ?9,
+            indexed_at_ms = ?10
+         WHERE relative_path = ?11 AND modified_ms = ?12 AND size = ?13
         ",
         params![
             row.file_name,
@@ -287,6 +296,7 @@ pub fn cas_update(
             row.parse_truncated,
             row.title,
             row.excerpt,
+            row.body,
             now_ms(),
             row.relative_path,
             expected_mtime,
@@ -304,6 +314,7 @@ pub fn cas_update(
                 &row.excerpt,
                 &row.relative_path,
                 &row.tags,
+                &row.body,
             )?;
         }
     }
@@ -315,8 +326,8 @@ pub fn insert_ignore(conn: &Connection, row: &NoteRow) -> rusqlite::Result<usize
         "
         INSERT OR IGNORE INTO notes (
             relative_path, file_name, extension, folder, modified_ms, size,
-            parse_truncated, title, excerpt, indexed_at_ms
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            parse_truncated, title, excerpt, body, indexed_at_ms
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         ",
         params![
             row.relative_path,
@@ -328,6 +339,7 @@ pub fn insert_ignore(conn: &Connection, row: &NoteRow) -> rusqlite::Result<usize
             row.parse_truncated,
             row.title,
             row.excerpt,
+            row.body,
             now_ms()
         ],
     )?;
@@ -342,6 +354,7 @@ pub fn insert_ignore(conn: &Connection, row: &NoteRow) -> rusqlite::Result<usize
                 &row.excerpt,
                 &row.relative_path,
                 &row.tags,
+                &row.body,
             )?;
         }
     }
@@ -481,11 +494,12 @@ pub fn sync_fts(
     excerpt: &str,
     path: &str,
     tags: &[String],
+    body: &str,
 ) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", params![note_id])?;
     conn.execute(
-        "INSERT INTO notes_fts(rowid, title, excerpt, path, tags) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![note_id, title, excerpt, path, tags.join(" ")],
+        "INSERT INTO notes_fts(rowid, title, excerpt, path, tags, body) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![note_id, title, excerpt, path, tags.join(" "), body],
     )?;
     Ok(())
 }
@@ -509,6 +523,7 @@ mod tests {
             false,
             "One".into(),
             "body".into(),
+            "Full body one".into(),
             &["a".into(), "A".into()],
         );
         let id = upsert_note(&index.conn, &row).unwrap();
@@ -531,6 +546,15 @@ mod tests {
             )
             .unwrap();
         assert!(fts.contains('a') || fts.contains('A'));
+        let fts_body: String = index
+            .conn
+            .query_row(
+                "SELECT body FROM notes_fts WHERE rowid = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(fts_body, "Full body one");
         let columns: Vec<String> = {
             let mut statement = index.conn.prepare("PRAGMA table_info(notes)").unwrap();
             statement
@@ -557,6 +581,7 @@ mod tests {
             false,
             "One".into(),
             "body".into(),
+            "Full body".into(),
             &["Work".into()],
         );
         let id = upsert_note(&index.conn, &row).unwrap();

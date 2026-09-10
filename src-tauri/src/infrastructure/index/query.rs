@@ -40,7 +40,7 @@ fn query_notes(
     let mut sql = String::from(
         "
         SELECT n.id, n.relative_path, n.file_name, n.extension, n.modified_ms, n.size,
-               n.title, n.excerpt
+               n.title, n.excerpt, n.body
           FROM notes n
          WHERE 1 = 1
         ",
@@ -93,20 +93,27 @@ fn query_notes(
     }
 
     let q = query.q.trim();
+    let mut search_terms: Vec<String> = Vec::new();
     if !q.is_empty() {
         if query_uses_fts(q) {
             if let Some(match_query) = fts_match_query(q) {
                 sql.push_str(" AND n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)");
                 binds.push(match_query.into());
             }
+            search_terms = q
+                .split_whitespace()
+                .map(str::to_string)
+                .collect::<Vec<_>>();
         } else {
             let needle = like_contains(q);
             sql.push_str(
-                " AND (n.title LIKE ? ESCAPE '\\' OR n.excerpt LIKE ? ESCAPE '\\' OR n.relative_path LIKE ? ESCAPE '\\')",
+                " AND (n.title LIKE ? ESCAPE '\\' OR n.excerpt LIKE ? ESCAPE '\\' OR n.relative_path LIKE ? ESCAPE '\\' OR n.body LIKE ? ESCAPE '\\')",
             );
             binds.push(needle.clone().into());
             binds.push(needle.clone().into());
+            binds.push(needle.clone().into());
             binds.push(needle.into());
+            search_terms = vec![q.to_string()];
         }
     }
 
@@ -129,6 +136,8 @@ fn query_notes(
                 title: row.get(6)?,
                 tags: Vec::new(),
                 excerpt: row.get(7)?,
+                body: row.get(8)?,
+                snippet: String::new(),
             },
         ))
     })?;
@@ -140,7 +149,46 @@ fn query_notes(
         notes.push(note);
     }
     attach_tags(conn, &ids, &mut notes)?;
+    if !search_terms.is_empty() {
+        for note in notes.iter_mut() {
+            note.snippet = build_snippet(&note.body, &search_terms);
+        }
+    }
     Ok(notes)
+}
+
+/// Build a short context snippet around the first search-term occurrence in
+/// the body. Falls back to empty when the body does not contain the term
+/// (e.g. the hit was on title or path); the caller keeps the excerpt.
+const SNIPPET_CONTEXT: usize = 30;
+const SNIPPET_LEN: usize = 100;
+
+fn build_snippet(body: &str, terms: &[String]) -> String {
+    if body.trim().is_empty() {
+        return String::new();
+    }
+    let hay = body.to_lowercase();
+    for term in terms {
+        let needle = term.to_lowercase();
+        if needle.is_empty() {
+            continue;
+        }
+        if let Some(at) = hay.find(&needle) {
+            let start = at.saturating_sub(SNIPPET_CONTEXT);
+            // Snap to char boundaries so we never slice mid-codepoint.
+            let start = body.floor_char_boundary(start);
+            let end = (at + needle.len() + SNIPPET_LEN).min(body.len());
+            let end = body.ceil_char_boundary(end);
+            let prefix = if start > 0 { "…" } else { "" };
+            let suffix = if end < body.len() { "…" } else { "" };
+            let mut text = body[start..end].split_whitespace().collect::<Vec<_>>().join(" ");
+            if text.is_empty() {
+                text = body[start..end].to_string();
+            }
+            return format!("{prefix}{text}{suffix}");
+        }
+    }
+    String::new()
 }
 
 fn attach_tags(conn: &Connection, ids: &[i64], notes: &mut [NoteFile]) -> rusqlite::Result<()> {
@@ -424,6 +472,7 @@ mod tests {
                 100_i64,
                 "Alpha",
                 "First project",
+                "The alpha note discusses the project roadmap.",
                 vec!["work".to_string()],
             ),
             (
@@ -432,6 +481,7 @@ mod tests {
                 1_i64,
                 "Beta",
                 "Second note",
+                "A quiet note with unrelated prose.",
                 Vec::new(),
             ),
             (
@@ -440,6 +490,7 @@ mod tests {
                 50_i64,
                 "今日笔记",
                 "写一点今天的事",
+                "今天的正文里提到了一个特殊关键词蓝鲸计划。",
                 vec!["日记".to_string()],
             ),
             (
@@ -448,10 +499,11 @@ mod tests {
                 80_i64,
                 "Gamma",
                 "Nested note",
+                "Nested body mentions milestones too.",
                 vec!["nested".to_string()],
             ),
         ];
-        for (path, name, mtime, title, excerpt, tags) in rows {
+        for (path, name, mtime, title, excerpt, body, tags) in rows {
             let row = note_row(
                 path.into(),
                 name.into(),
@@ -461,6 +513,7 @@ mod tests {
                 false,
                 title.into(),
                 excerpt.into(),
+                body.into(),
                 &tags,
             );
             upsert_note(conn, &row).unwrap();
@@ -614,5 +667,84 @@ mod tests {
         assert!(!query_uses_fts("笔记"));
         assert_eq!(cjk.notes.len(), 1);
         assert_eq!(cjk.notes[0].title, "今日笔记");
+    }
+
+    #[test]
+    fn full_text_search_matches_bodies() {
+        let root = tempdir().unwrap();
+        let index = open_or_rebuild(root.path());
+        seed(&index.conn);
+
+        // English FTS path: token only present in a body.
+        let english = query_library(
+            &index.conn,
+            &LibraryQuery {
+                q: "roadmap".into(),
+                now_ms: 100,
+                ..LibraryQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(english.notes.len(), 1);
+        assert_eq!(english.notes[0].relative_path, "work/alpha.md");
+        assert!(english.notes[0].snippet.contains("roadmap"));
+
+        // CJK LIKE path: keyword only present in a body.
+        let cjk = query_library(
+            &index.conn,
+            &LibraryQuery {
+                q: "蓝鲸计划".into(),
+                now_ms: 100,
+                ..LibraryQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(cjk.notes.len(), 1);
+        assert_eq!(cjk.notes[0].relative_path, "日记/today.md");
+        assert!(cjk.notes[0].snippet.contains("蓝鲸计划"));
+
+        // Body search still respects other filters (folder).
+        let folder_scoped = query_library(
+            &index.conn,
+            &LibraryQuery {
+                q: "milestones".into(),
+                folder: Some(String::new()),
+                now_ms: 100,
+                ..LibraryQuery::default()
+            },
+        )
+        .unwrap();
+        assert!(folder_scoped.notes.is_empty());
+
+        // No query → no snippet.
+        let all = query_library(
+            &index.conn,
+            &LibraryQuery {
+                now_ms: 100,
+                ..LibraryQuery::default()
+            },
+        )
+        .unwrap();
+        assert!(all.notes.iter().all(|note| note.snippet.is_empty()));
+    }
+
+    #[test]
+    fn snippet_falls_back_to_empty_when_hit_was_on_title() {
+        let root = tempdir().unwrap();
+        let index = open_or_rebuild(root.path());
+        seed(&index.conn);
+
+        let hit = query_library(
+            &index.conn,
+            &LibraryQuery {
+                q: "milestones".into(),
+                now_ms: 100,
+                ..LibraryQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(hit.notes.len(), 1);
+        // The token only appears in gamma's body, so a snippet exists.
+        assert!(hit.notes[0].snippet.contains("milestones"));
     }
 }

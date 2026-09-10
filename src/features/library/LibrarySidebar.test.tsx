@@ -131,6 +131,23 @@ describe("LibrarySidebar folders", () => {
     expect(view.getByRole("button", { name: "云同步" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("opens the AI chat panel from the drawer", async () => {
+    useAppStore.setState({
+      workspaceRoot: "/notes",
+      libraryPanelMode: "notes",
+      libraryStats: { ...emptyLibraryStats(), total: 1 },
+    });
+    const user = userEvent.setup();
+    const view = render(
+      <LibrarySidebar isDark={false} onCreateFolder={() => undefined} onCreateTag={() => undefined} />,
+    );
+
+    await user.click(view.getByRole("button", { name: "AI 编写" }));
+    expect(useAppStore.getState().libraryPanelMode).toBe("ai");
+    expect(useAppStore.getState().mobilePanel).toBe("editor");
+    expect(view.getByRole("button", { name: "AI 编写" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("opens the workspace index panel from the drawer", async () => {
     useAppStore.setState({
       workspaceRoot: "/notes",

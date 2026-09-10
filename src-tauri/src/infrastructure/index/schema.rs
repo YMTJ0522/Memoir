@@ -2,7 +2,7 @@ use crate::domain::note_parse::{INDEX_READ_CAP, PARSE_ALGO_VERSION};
 use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const CURRENT_USER_VERSION: i32 = 3;
+pub const CURRENT_USER_VERSION: i32 = 4;
 
 pub const ALLOWED_TABLES: &[&str] = &[
     "meta",
@@ -55,6 +55,7 @@ pub fn apply_schema_v2(conn: &Connection) -> rusqlite::Result<()> {
             parse_truncated  INTEGER NOT NULL DEFAULT 0,
             title            TEXT    NOT NULL,
             excerpt          TEXT    NOT NULL,
+            body             TEXT    NOT NULL DEFAULT '',
             indexed_at_ms    INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS notes_modified ON notes(modified_ms DESC, relative_path);
@@ -71,6 +72,7 @@ pub fn apply_schema_v2(conn: &Connection) -> rusqlite::Result<()> {
             excerpt,
             path,
             tags,
+            body,
             tokenize = 'unicode61 remove_diacritics 2'
         );
         CREATE TABLE IF NOT EXISTS dir_cache (
@@ -128,11 +130,53 @@ pub fn apply_schema(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// v3 → v4: the `notes` table gains a `body` column and `notes_fts` gains a
+/// `body` column. FTS5 virtual tables cannot be altered in place, so the FTS
+/// table is dropped and recreated; its rows are refilled by the forced
+/// full reparse that the PARSE_ALGO_VERSION bump triggers.
+pub fn apply_schema_v4(conn: &Connection) -> rusqlite::Result<()> {
+    let body_column: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'body'",
+        [],
+        |row| row.get(0),
+    )?;
+    if body_column == 0 {
+        conn.execute_batch("ALTER TABLE notes ADD COLUMN body TEXT NOT NULL DEFAULT ''")?;
+    }
+    let fts_has_body: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('notes_fts') WHERE name = 'body'",
+        [],
+        |row| row.get(0),
+    )?;
+    if fts_has_body == 0 {
+        conn.execute_batch(
+            "
+            DROP TABLE IF EXISTS notes_fts;
+            CREATE VIRTUAL TABLE notes_fts USING fts5(
+                title,
+                excerpt,
+                path,
+                tags,
+                body,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
+            ",
+        )?;
+    }
+    Ok(())
+}
+
 pub fn upgrade_schema(conn: &Connection, version: i32) -> Result<(), ()> {
     if version == 0 {
         apply_schema(conn).map_err(|_| ())
     } else if version == 2 {
         apply_note_links_schema(conn).map_err(|_| ())?;
+        apply_schema_v4(conn).map_err(|_| ())?;
+        conn.pragma_update(None, "user_version", CURRENT_USER_VERSION)
+            .map_err(|_| ())?;
+        Ok(())
+    } else if version == 3 {
+        apply_schema_v4(conn).map_err(|_| ())?;
         conn.pragma_update(None, "user_version", CURRENT_USER_VERSION)
             .map_err(|_| ())?;
         Ok(())
@@ -253,5 +297,49 @@ mod tests {
         conn.execute_batch("CREATE TRIGGER evil AFTER INSERT ON notes BEGIN SELECT 1; END;")
             .unwrap();
         assert!(!schema_is_safe(&conn));
+    }
+
+    #[test]
+    fn v3_index_upgrades_to_v4_with_body_columns() {
+        // Build a legacy v3 index: no body column on notes, FTS without body.
+        let conn = Connection::open_in_memory().unwrap();
+        apply_schema_v2(&conn).unwrap();
+        apply_note_links_schema(&conn).unwrap();
+        conn.execute_batch(
+            "DROP TABLE notes_fts;
+            CREATE VIRTUAL TABLE notes_fts USING fts5(
+                title, excerpt, path, tags,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+
+        conn.execute(
+            "INSERT INTO notes (relative_path, file_name, extension, folder, modified_ms, size,
+                               parse_truncated, title, excerpt, indexed_at_ms)
+             VALUES ('old.md', 'old.md', 'md', '', 1, 10, 0, 'Old', 'legacy', 1)",
+            [],
+        )
+        .unwrap();
+
+        upgrade_schema(&conn, 3).unwrap();
+        assert_eq!(user_version(&conn).unwrap(), CURRENT_USER_VERSION);
+        assert!(schema_is_safe(&conn));
+
+        let body: String = conn
+            .query_row("SELECT body FROM notes WHERE relative_path = 'old.md'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(body, "");
+
+        let fts_columns: Vec<String> = {
+            let mut statement = conn.prepare("PRAGMA table_info(notes_fts)").unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert!(fts_columns.iter().any(|name| name == "body"));
     }
 }

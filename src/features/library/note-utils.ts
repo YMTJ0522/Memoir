@@ -103,7 +103,16 @@ export function buildExcerpt(content: string) {
   return sliced;
 }
 
-export function parseNote(content: string, fallbackTitle: string) {
+export type ParsedNote = {
+  body: string;
+  title: string;
+  tags: string[];
+  excerpt: string;
+  /** Raw frontmatter data when the note opens with a `---` block, else null. */
+  frontmatter: Record<string, unknown> | null;
+};
+
+export function parseNote(content: string, fallbackTitle: string): ParsedNote {
   try {
     const parsed = matter(content);
     const body = stripFrontmatter(parsed.content);
@@ -117,8 +126,12 @@ export function parseNote(content: string, fallbackTitle: string) {
             .map((tag) => tag.trim())
             .filter(Boolean)
         : [];
+    const hasFrontmatterBlock = /^---\r?\n/.test(content);
+    const frontmatterData = hasFrontmatterBlock && Object.keys(parsed.data).length > 0
+      ? (parsed.data as Record<string, unknown>)
+      : null;
 
-    return { body, title, tags, excerpt: buildExcerpt(body) };
+    return { body, title, tags, excerpt: buildExcerpt(body), frontmatter: frontmatterData };
   } catch {
     const body = stripFrontmatter(content);
     return {
@@ -126,6 +139,7 @@ export function parseNote(content: string, fallbackTitle: string) {
       title: extractTitle(body, fallbackTitle),
       tags: [],
       excerpt: buildExcerpt(body),
+      frontmatter: null,
     };
   }
 }
@@ -236,11 +250,43 @@ export function filterNotes(
       return false;
     }
     if (!normalizedQuery) return true;
-    return [note.title, note.fileName, note.excerpt, note.relativePath, ...note.tags]
+    return [note.title, note.fileName, note.excerpt, note.relativePath, note.body ?? "", ...note.tags]
       .join(" ")
       .toLowerCase()
       .includes(normalizedQuery);
   });
+}
+
+/**
+ * Mirrors the Rust search rule (see `query_uses_fts` in query.rs): a query
+ * containing any ASCII letter is split into AND tokens; CJK/digit queries are
+ * treated as one substring.
+ */
+function buildSearchTerms(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  return /[A-Za-z]/.test(trimmed) ? trimmed.split(/\s+/) : [trimmed];
+}
+
+/** Mirrors Rust `build_snippet` (query.rs): context window around the first hit. */
+function buildSnippet(body: string | undefined, terms: string[]): string {
+  const source = body ?? "";
+  if (!source.trim() || terms.length === 0) return "";
+  const hay = source.toLowerCase();
+  for (const term of terms) {
+    const needle = term.toLowerCase();
+    if (!needle) continue;
+    const at = hay.indexOf(needle);
+    if (at < 0) continue;
+    const start = Math.max(0, at - 30);
+    const end = Math.min(source.length, at + needle.length + 100);
+    const prefix = start > 0 ? "…" : "";
+    const suffix = end < source.length ? "…" : "";
+    const slice = source.slice(start, end);
+    const text = slice.split(/\s+/).filter(Boolean).join(" ") || slice;
+    return `${prefix}${text}${suffix}`;
+  }
+  return "";
 }
 
 export function noteStats(content: string) {
@@ -308,11 +354,15 @@ export function queryNotesInMemory(
     : query.tag != null
       ? { type: "tag", value: query.tag }
       : null;
-  const filtered = sortLibraryNotes(
+const filtered = sortLibraryNotes(
     filterNotes(metas, query.q, query.nav, scoped, query.nowMs ?? Date.now()),
   );
+  const searchTerms = buildSearchTerms(query.q);
   return {
-    notes: filtered.map(({ favorite: _favorite, dirty: _dirty, ...raw }) => raw),
+    notes: filtered.map(({ favorite: _favorite, dirty: _dirty, ...raw }) => {
+      if (searchTerms.length > 0) raw.snippet = buildSnippet(raw.body, searchTerms);
+      return raw;
+    }),
     stats: libraryStatsFromNotes(metas, favoritePaths, query.nowMs ?? Date.now()),
   };
 }

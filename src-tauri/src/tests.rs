@@ -1,6 +1,6 @@
 use crate::{
     domain::{
-        path::{resolve_existing_note, resolve_new_note, validate_relative_path},
+        path::{resolve_new_note, validate_relative_path},
         AppSettings, ErrorCode, FolderAppearance, LegacyDraft, LegacyStatePayload,
         WindowFrameState, DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_HEIGHT,
         MIN_WINDOW_WIDTH,
@@ -183,16 +183,10 @@ fn app_state_defaults_version_compatibility_and_favorites_are_isolated() {
     let app_data = tempdir().unwrap();
     let workspace_a = tempdir().unwrap();
     let workspace_b = tempdir().unwrap();
-    let workspace_a_key = workspace_a
-        .path()
-        .canonicalize()
-        .unwrap()
+    let workspace_a_key = dunce::simplified(&workspace_a.path().canonicalize().unwrap())
         .to_string_lossy()
         .to_string();
-    let workspace_b_key = workspace_b
-        .path()
-        .canonicalize()
-        .unwrap()
+    let workspace_b_key = dunce::simplified(&workspace_b.path().canonicalize().unwrap())
         .to_string_lossy()
         .to_string();
     let repository = AppDataRepository::new(app_data.path().to_path_buf());
@@ -293,6 +287,51 @@ fn skipped_update_version_persists_across_preference_saves() {
 }
 
 #[test]
+fn load_migrates_verbatim_workspace_keys_and_persists_plain_form() {
+    let app_data = tempdir().unwrap();
+    let repository = AppDataRepository::new(app_data.path().to_path_buf());
+
+    // Simulate a state file written by an older release.
+    let legacy = serde_json::json!({
+        "version": 1,
+        "preferences": AppSettings::default(),
+        "recentWorkspaces": ["\\\\?\\E:\\notes"],
+        "lastWorkspace": "\\\\?\\E:\\notes",
+        "favorites": { "\\\\?\\E:\\notes": ["diary.md"] },
+        "folderAppearances": { "\\\\?\\E:\\notes": {} },
+        "cloudSync": {}
+    });
+    fs::create_dir_all(app_data.path()).unwrap();
+    fs::write(
+        app_data.path().join("app-state.json"),
+        serde_json::to_vec_pretty(&legacy).unwrap(),
+    )
+    .unwrap();
+
+    let service = AppStateService::new(repository);
+    let state = service.load().unwrap();
+    assert_eq!(state.last_workspace.as_deref(), Some("E:\\notes"));
+    assert!(state.recent_workspaces.contains(&"E:\\notes".to_string()));
+    assert!(state.favorites.contains_key("E:\\notes"));
+    assert!(!state.favorites.contains_key("\\\\?\\E:\\notes"));
+
+    // Persisted file must be rewritten with plain keys.
+    let persisted = fs::read_to_string(app_data.path().join("app-state.json")).unwrap();
+    assert!(!persisted.contains(r"\\\\?\\"));
+}
+
+#[test]
+fn normalize_root_strips_windows_verbatim_prefix() {
+    let workspace = tempdir().unwrap();
+    let root = crate::domain::path::normalize_root(workspace.path().to_str().unwrap()).unwrap();
+    let text = root.to_string_lossy().to_string();
+    assert!(
+        !text.starts_with(r"\\?\"),
+        "normalize_root should not return a verbatim path: {text}"
+    );
+}
+
+#[test]
 fn layout_widths_persist_and_clamp() {
     let app_data = tempdir().unwrap();
     let service = AppStateService::new(AppDataRepository::new(app_data.path().to_path_buf()));
@@ -350,16 +389,10 @@ fn folder_appearances_are_isolated_sanitized_and_cleared() {
     let app_data = tempdir().unwrap();
     let workspace_a = tempdir().unwrap();
     let workspace_b = tempdir().unwrap();
-    let workspace_a_key = workspace_a
-        .path()
-        .canonicalize()
-        .unwrap()
+    let workspace_a_key = dunce::simplified(&workspace_a.path().canonicalize().unwrap())
         .to_string_lossy()
         .to_string();
-    let workspace_b_key = workspace_b
-        .path()
-        .canonicalize()
-        .unwrap()
+    let workspace_b_key = dunce::simplified(&workspace_b.path().canonicalize().unwrap())
         .to_string_lossy()
         .to_string();
     let service = AppStateService::new(AppDataRepository::new(app_data.path().to_path_buf()));
@@ -504,6 +537,91 @@ fn drafts_round_trip_delete_and_support_legacy_keys_with_colons() {
 }
 
 #[test]
+fn note_versions_snapshot_policy_list_get_and_trim_to_limit() {
+    let app_data = tempdir().unwrap();
+    let service = AppStateService::new(AppDataRepository::new(app_data.path().to_path_buf()));
+    let root = "C:\\Users\\writer";
+    let path = "notes/today.md";
+
+    // First snapshot of a note is always recorded.
+    service
+        .snapshot_note_version(root, path, "first version", "first version + edit", false)
+        .unwrap();
+    let list = service.list_note_versions(root, path).unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(list[0].id.starts_with('v'));
+
+    // Small edits within the interval are skipped.
+    service
+        .snapshot_note_version(root, path, "first version + edit", "first version + edit2", false)
+        .unwrap();
+    assert_eq!(service.list_note_versions(root, path).unwrap().len(), 1);
+
+    // Large changes bypass the interval and are recorded.
+    service
+        .snapshot_note_version(
+            root,
+            path,
+            "first version + edit2",
+            &"x".repeat(500),
+            false,
+        )
+        .unwrap();
+    let large = service.list_note_versions(root, path).unwrap();
+    assert_eq!(large.len(), 2);
+
+    // Restore snapshots are unconditional.
+    service
+        .snapshot_note_version(root, path, "current content", "restored", true)
+        .unwrap();
+    let restored = service.list_note_versions(root, path).unwrap();
+    assert_eq!(restored.len(), 3);
+    assert!(restored.iter().all(|version| version.id.starts_with('v')));
+    // Empty outgoing content never snapshots.
+    service
+        .snapshot_note_version(root, path, "", "brand new", false)
+        .unwrap();
+    assert_eq!(service.list_note_versions(root, path).unwrap().len(), 3);
+
+    // get returns the full payload including content.
+    let target = large[1].id.clone();
+    let full = service.get_note_version(root, path, &target).unwrap();
+    assert_eq!(full.content, "first version");
+    assert_eq!(full.title, "Untitled");
+    assert_eq!(full.size, 13);
+    assert!(service.get_note_version(root, path, "missing").is_err());
+
+    // Unrelated notes are isolated.
+    assert!(service
+        .list_note_versions(root, "notes/other.md")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn note_versions_trim_oldest_when_exceeding_the_limit() {
+    let app_data = tempdir().unwrap();
+    let repository = AppDataRepository::new(app_data.path().to_path_buf());
+    let service = AppStateService::new(repository.clone());
+    let root = "C:\\Users\\writer";
+    let path = "notes/today.md";
+
+    for index in 0..60 {
+        service
+            .snapshot_note_version(root, path, &format!("content {index}"), "next", true)
+            .unwrap();
+    }
+    let versions = service.list_note_versions(root, path).unwrap();
+    assert_eq!(versions.len(), 50);
+    assert_eq!(versions[0].size, "content 59".len() as u64);
+    assert_eq!(
+        versions.last().unwrap().size,
+        "content 10".len() as u64,
+        "oldest snapshots are trimmed first"
+    );
+}
+
+#[test]
 fn legacy_migration_writes_state_and_only_reports_persisted_keys() {
     let app_data = tempdir().unwrap();
     let service = AppStateService::new(AppDataRepository::new(app_data.path().to_path_buf()));
@@ -613,9 +731,11 @@ fn saves_lists_and_trashes_attachments_inside_the_library() {
     let imported = filesystem
         .import_attachment(root, source.to_str().unwrap())
         .unwrap();
+    // Streaming imports trust the declared file name: the PNG bytes inside a
+    // `.webp` name stay as-is instead of being re-normalized to `.png`.
     assert_eq!(
         imported.relative_path,
-        format!("attachments/{month}/diagram.png")
+        format!("attachments/{month}/diagram.webp")
     );
 
     let trashed = filesystem
@@ -639,8 +759,8 @@ fn rejects_non_image_and_escaping_attachment_paths() {
             .save_attachment(
                 root,
                 b"not-an-image",
-                Some("notes.md"),
-                Some("text/markdown")
+                Some("unknown.xyz"),
+                None
             )
             .unwrap_err()
             .code,
@@ -672,14 +792,191 @@ fn rejects_non_image_and_escaping_attachment_paths() {
 }
 
 #[test]
+fn imports_video_attachments_with_a_larger_size_limit() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().to_str().unwrap();
+    let filesystem = LocalFileSystem::new();
+    let month = crate::domain::attachment::attachment_month_dir();
+
+    let outside = tempdir().unwrap();
+    let source = outside.path().join("demo.mp4");
+    fs::write(&source, b"fake-mp4-bytes").unwrap();
+    let imported = filesystem
+        .import_attachment(root, source.to_str().unwrap())
+        .unwrap();
+    assert_eq!(
+        imported.relative_path,
+        format!("attachments/{month}/demo.mp4")
+    );
+    assert_eq!(imported.extension, "mp4");
+    assert_eq!(imported.mime_type, "video/mp4");
+
+    // Over the image limit (20 MB) but under the video limit (200 MB) is fine.
+    let big_video = vec![0_u8; crate::domain::attachment::MAX_ATTACHMENT_BYTES + 1];
+    let big = filesystem
+        .save_attachment(root, &big_video, Some("big.mp4"), Some("video/mp4"))
+        .unwrap();
+    assert_eq!(big.extension, "mp4");
+
+    let too_big = vec![0_u8; crate::domain::attachment::MAX_VIDEO_ATTACHMENT_BYTES + 1];
+    assert_eq!(
+        filesystem
+            .save_attachment(root, &too_big, Some("huge.mp4"), Some("video/mp4"))
+            .unwrap_err()
+            .code,
+        ErrorCode::Io
+    );
+
+    // Unknown extensions stay rejected.
+    assert_eq!(
+        filesystem
+            .save_attachment(root, b"x", Some("movie.xyz"), None)
+            .unwrap_err()
+            .code,
+        ErrorCode::UnsupportedExtension
+    );
+
+    let listed = filesystem.scan_attachments(root).unwrap();
+    assert!(listed
+        .iter()
+        .any(|item| item.relative_path == format!("attachments/{month}/demo.mp4")));
+}
+
+#[test]
+fn imports_document_archive_and_audio_attachments() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().to_str().unwrap();
+    let filesystem = LocalFileSystem::new();
+    let month = crate::domain::attachment::attachment_month_dir();
+
+    let outside = tempdir().unwrap();
+    for (name, expected_mime) in [
+        ("报告.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        ("预算表.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ("路演.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        ("手册.pdf", "application/pdf"),
+        ("打包.zip", "application/zip"),
+        ("备份.rar", "application/vnd.rar"),
+        ("录音.mp3", "audio/mpeg"),
+    ] {
+        let source = outside.path().join(name);
+        fs::write(&source, b"payload-bytes").unwrap();
+        let imported = filesystem
+            .import_attachment(root, source.to_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            imported.relative_path,
+            format!("attachments/{month}/{}", name),
+            "import {name}"
+        );
+        assert_eq!(imported.mime_type, expected_mime, "mime for {name}");
+    }
+
+    // Documents and archives allow large files (2 GB streaming tier).
+    let big_doc = vec![0_u8; crate::domain::attachment::MAX_VIDEO_ATTACHMENT_BYTES + 1];
+    let big = filesystem
+        .save_attachment(root, &big_doc, Some("big.pdf"), Some("application/pdf"))
+        .unwrap();
+    assert_eq!(big.extension, "pdf");
+
+    // Audio has its own tier between images and archives.
+    let too_big_audio = vec![0_u8; crate::domain::attachment::MAX_AUDIO_ATTACHMENT_BYTES + 1];
+    assert_eq!(
+        filesystem
+            .save_attachment(root, &too_big_audio, Some("huge.wav"), Some("audio/wav"))
+            .unwrap_err()
+            .code,
+        ErrorCode::Io
+    );
+
+    let listed = filesystem.scan_attachments(root).unwrap();
+    assert!(listed
+        .iter()
+        .any(|item| item.relative_path == format!("attachments/{month}/打包.zip")));
+    assert!(listed
+        .iter()
+        .any(|item| item.relative_path == format!("attachments/{month}/报告.docx")));
+}
+
+#[test]
+fn streaming_imports_copy_large_files_without_loading_them_into_memory() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().to_str().unwrap();
+    let filesystem = LocalFileSystem::new();
+    let month = crate::domain::attachment::attachment_month_dir();
+
+    let outside = tempdir().unwrap();
+    // A sparse archive beyond any in-memory tier — 1.5 GB declared size,
+    // written with seek so the test itself stays fast and cheap on disk.
+    let source = outside.path().join("docs.zip");
+    {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut file = fs::File::create(&source).unwrap();
+        file.seek(SeekFrom::Start(3 * 1024 * 1024 * 1024 / 2)).unwrap();
+        file.write_all(b"tail").unwrap();
+    }
+    let imported = filesystem
+        .import_attachment(root, source.to_str().unwrap())
+        .unwrap();
+    assert_eq!(
+        imported.relative_path,
+        format!("attachments/{month}/docs.zip")
+    );
+    assert_eq!(imported.size, 3 * 1024 * 1024 * 1024 / 2 + 4);
+
+    // Copies stay under the 2 GB document tier.
+    let oversized = outside.path().join("huge.zip");
+    {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut file = fs::File::create(&oversized).unwrap();
+        file.seek(SeekFrom::Start(2 * 1024 * 1024 * 1024 + 1)).unwrap();
+        file.write_all(b"!").unwrap();
+    }
+    assert_eq!(
+        filesystem
+            .import_attachment(root, oversized.to_str().unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::Io
+    );
+
+    // Empty files are rejected before any copy happens.
+    let empty = outside.path().join("empty.pdf");
+    fs::write(&empty, b"").unwrap();
+    assert_eq!(
+        filesystem
+            .import_attachment(root, empty.to_str().unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::UnsupportedExtension
+    );
+
+    // Non-file sources (directories) fail fast.
+    assert_eq!(
+        filesystem
+            .import_attachment(root, outside.path().to_str().unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+}
+
+#[test]
 fn writes_absolute_pdf_export_files_and_rejects_invalid_paths() {
     let dir = tempdir().unwrap();
-    let dest = dir.path().join("note.pdf");
     let filesystem = LocalFileSystem::new();
-    filesystem
-        .write_export_file(dest.to_str().unwrap(), b"%PDF-1.4 test")
-        .unwrap();
-    assert_eq!(fs::read(&dest).unwrap(), b"%PDF-1.4 test");
+
+    for (name, bytes) in [
+        ("note.pdf", &b"%PDF-1.4 test"[..]),
+        ("note.html", b"<html></html>"),
+        ("note.md", b"# note"),
+        ("note.doc", b"<html>word</html>"),
+        ("note.docx", b"PK\x03\x04docx"),
+    ] {
+        let dest = dir.path().join(name);
+        filesystem.write_export_file(dest.to_str().unwrap(), bytes).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), bytes, "export {name} should round-trip");
+    }
 
     assert_eq!(
         filesystem
@@ -1074,7 +1371,7 @@ fn v1_index_file_is_rebuilt_as_v2_and_notes_return() {
     assert_eq!(page.notes.len(), 1);
     assert_eq!(page.notes[0].title, "Keep");
     let info = service.index_info(root).unwrap();
-    assert_eq!(info.schema_version, 3);
+    assert_eq!(info.schema_version, 4);
 }
 
 #[test]
@@ -1172,4 +1469,207 @@ fn bench_open_vs_create_walk_counts() {
         q.notes.len()
     );
     assert_eq!(create_walks, 0);
+}
+
+#[test]
+fn reads_import_sources_with_utf8_gbk_and_bom_decoding() {
+    let dir = tempdir().unwrap();
+    let utf8 = dir.path().join("note.md");
+    fs::write(&utf8, "# Title\n\nBody").unwrap();
+    let source = crate::domain::import_source::read_import_source(utf8.to_str().unwrap()).unwrap();
+    assert_eq!(source.extension, "md");
+    assert_eq!(source.text, "# Title\n\nBody");
+    assert!(!source.bytes_base64.is_empty());
+
+    let bom = dir.path().join("bom.txt");
+    fs::write(&bom, b"\xEF\xBB\xBF# BOM").unwrap();
+    let source = crate::domain::import_source::read_import_source(bom.to_str().unwrap()).unwrap();
+    assert_eq!(source.text, "# BOM");
+
+    let gbk = dir.path().join("中文.txt");
+    // GBK 编码“你好，世界”
+    let gbk_bytes = [
+        0xC4, 0xE3, 0xBA, 0xC3, 0xA3, 0xAC, 0xCA, 0xC0, 0xBD, 0xE7,
+    ];
+    fs::write(&gbk, gbk_bytes).unwrap();
+    let source = crate::domain::import_source::read_import_source(gbk.to_str().unwrap()).unwrap();
+    assert_eq!(source.text, "你好，世界");
+
+    let missing = dir.path().join("missing.md");
+    assert_eq!(
+        crate::domain::import_source::read_import_source(missing.to_str().unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+
+    let pdf = dir.path().join("doc.pdf");
+    fs::write(&pdf, "%PDF-1.4").unwrap();
+    assert_eq!(
+        crate::domain::import_source::read_import_source(pdf.to_str().unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::UnsupportedExtension
+    );
+}
+
+#[test]
+fn import_note_writes_frontmatter_and_deduplicates_slugs() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().to_str().unwrap();
+    let filesystem = LocalFileSystem::new();
+
+    let first = filesystem
+        .import_note(root, "Hello World", "# Body", None)
+        .unwrap();
+    let second = filesystem
+        .import_note(root, "Hello World", "# Body 2", None)
+        .unwrap();
+    assert_eq!(first, "hello-world.md");
+    assert_eq!(second, "hello-world-1.md");
+    assert_eq!(
+        filesystem.read_note(root, &first).unwrap(),
+        "---\ntitle: \"Hello World\"\ntags: []\n---\n\n# Body\n"
+    );
+    assert_eq!(
+        filesystem.read_note(root, &second).unwrap(),
+        "---\ntitle: \"Hello World\"\ntags: []\n---\n\n# Body 2\n"
+    );
+}
+
+/// The webview reads `fileName`/`bytesBase64`; a missing camelCase rename
+/// would silently skip every import (the bug that shipped with the feature).
+#[test]
+fn import_source_payload_serializes_to_camel_case() {
+    let dir = tempdir().unwrap();
+    let source_path = dir.path().join("文章.md");
+    fs::write(&source_path, "# 标题").unwrap();
+    let payload = crate::domain::import_source::read_import_source(source_path.to_str().unwrap())
+        .unwrap()
+        .into_payload();
+    let json = serde_json::to_string(&payload).unwrap();
+    assert!(json.contains("\"fileName\""), "payload was: {json}");
+    assert!(json.contains("\"bytesBase64\""), "payload was: {json}");
+    assert!(!json.contains("file_name"), "payload was: {json}");
+    assert!(!json.contains("bytes_base64"), "payload was: {json}");
+}
+
+#[test]
+fn trash_round_trip_list_restore_purge_empty() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().to_str().unwrap();
+    let filesystem = LocalFileSystem::new();
+
+    // Empty workspace → empty trash.
+    assert!(filesystem.list_trash(root).unwrap().is_empty());
+
+    // Delete a nested note: manifest must record the original nested path.
+    fs::create_dir_all(workspace.path().join("日记")).unwrap();
+    fs::write(workspace.path().join("日记/idea.md"), "# Idea").unwrap();
+    fs::write(workspace.path().join("plain.md"), "# Plain").unwrap();
+    filesystem.delete_note(root, "日记/idea.md").unwrap();
+    filesystem.delete_note(root, "plain.md").unwrap();
+
+    let trash = filesystem.list_trash(root).unwrap();
+    assert_eq!(trash.len(), 2);
+    let idea = trash.iter().find(|e| e.original_path == "日记/idea.md").unwrap();
+    assert!(idea.trash_name.ends_with("idea.md"));
+    assert!(!idea.is_attachment);
+    assert!(idea.size > 0);
+    assert!(idea.trash_path.starts_with(".memoir-trash/"));
+
+    // Restore: the nested note returns to its original folder.
+    let restored = filesystem.restore_trash_item(root, &idea.trash_name).unwrap();
+    assert_eq!(restored, "日记/idea.md");
+    assert_eq!(
+        fs::read_to_string(workspace.path().join("日记/idea.md")).unwrap(),
+        "# Idea"
+    );
+    assert_eq!(filesystem.list_trash(root).unwrap().len(), 1);
+
+    // Restore onto an occupied path: the user recreated the note meanwhile,
+    // so the restored copy lands next to it with a unique -restored name.
+    filesystem.delete_note(root, "日记/idea.md").unwrap();
+    fs::write(workspace.path().join("日记/idea.md"), "# Newer idea").unwrap();
+    let trash = filesystem.list_trash(root).unwrap();
+    let idea = trash
+        .iter()
+        .find(|e| e.original_path == "日记/idea.md" && e.size > 0)
+        .unwrap();
+    let restored2 = filesystem.restore_trash_item(root, &idea.trash_name).unwrap();
+    assert!(restored2.starts_with("日记/idea-restored"), "got {restored2}");
+    assert!(restored2.ends_with(".md"));
+    assert_eq!(
+        fs::read_to_string(workspace.path().join(&restored2)).unwrap(),
+        "# Idea"
+    );
+    // The newer note is untouched.
+    assert_eq!(
+        fs::read_to_string(workspace.path().join("日记/idea.md")).unwrap(),
+        "# Newer idea"
+    );
+
+    // Purge a single item.
+    let trash = filesystem.list_trash(root).unwrap();
+    let plain = trash
+        .iter()
+        .find(|e| e.original_path == "plain.md")
+        .unwrap();
+    filesystem.purge_trash_item(root, &plain.trash_name).unwrap();
+    assert!(!workspace
+        .path()
+        .join(".memoir-trash")
+        .join(&plain.trash_name)
+        .exists());
+    let remaining = filesystem.list_trash(root).unwrap();
+    assert!(remaining.iter().all(|e| e.original_path != "plain.md"));
+
+    // Empty trash wipes the rest.
+    filesystem.empty_trash(root).unwrap();
+    assert!(filesystem.list_trash(root).unwrap().is_empty());
+    // Restored files survive emptying.
+    assert!(workspace.path().join("日记/idea.md").exists());
+    assert!(workspace.path().join(&restored2).exists());
+}
+
+#[test]
+fn trash_manifest_adopts_legacy_files_without_records() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().to_str().unwrap();
+    let filesystem = LocalFileSystem::new();
+
+    // Simulate a pre-manifest trash directory.
+    let trash = workspace.path().join(".memoir-trash");
+    fs::create_dir_all(&trash).unwrap();
+    fs::write(trash.join("1757430000-legacy.md"), "# Legacy").unwrap();
+
+    let entries = filesystem.list_trash(root).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].trash_name, "1757430000-legacy.md");
+    assert_eq!(entries[0].original_path, "legacy.md");
+
+    // Legacy restore goes to the workspace root.
+    let restored = filesystem
+        .restore_trash_item(root, "1757430000-legacy.md")
+        .unwrap();
+    assert_eq!(restored, "legacy.md");
+    assert!(workspace.path().join("legacy.md").exists());
+}
+
+#[test]
+fn trash_commands_reject_path_escape() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().to_str().unwrap();
+    let filesystem = LocalFileSystem::new();
+    fs::write(workspace.path().join("note.md"), "# Note").unwrap();
+    filesystem.delete_note(root, "note.md").unwrap();
+
+    assert_eq!(
+        filesystem.purge_trash_item(root, "../outside.md").unwrap_err().code,
+        ErrorCode::InvalidPath
+    );
+    assert_eq!(
+        filesystem.restore_trash_item(root, "missing.md").unwrap_err().code,
+        ErrorCode::NotFound
+    );
 }

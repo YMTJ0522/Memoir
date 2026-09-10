@@ -30,6 +30,7 @@ import { useI18n } from "../../i18n/react";
 import { AttachmentLibrary } from "../attachments/AttachmentLibrary";
 import { CloudSyncPanel } from "../sync/CloudSyncPanel";
 import { NoteGraphPanel } from "../graph/NoteGraphPanel";
+import { TrashPanel } from "../trash/TrashPanel";
 import { IndexInspector } from "./IndexInspector";
 import { NoteLinksPanel } from "./NoteLinksPanel";
 import { NoteContextMenu, type NoteMenuTarget } from "./NoteContextMenu";
@@ -112,13 +113,15 @@ export function NoteList({
           data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
           onMouseDown={handleWindowDragMouseDown}
         >
-          {mode === "index" || mode === "attachments" || mode === "graph" ? (
+          {mode === "index" || mode === "attachments" || mode === "graph" || mode === "trash" ? (
             <h2 className="text-[13px] font-semibold tracking-[-0.02em] text-text">
               {mode === "attachments"
                 ? t("library.attachments")
                 : mode === "graph"
                   ? t("library.graph")
-                  : t("library.index")}
+                  : mode === "trash"
+                    ? t("library.trash")
+                    : t("library.index")}
             </h2>
           ) : (
             <div className="view-switcher library-mode-switcher flex items-center rounded-lg p-0.5">
@@ -152,8 +155,12 @@ export function NoteList({
             <IconButton label={t("library.importAttachment")} onClick={() => void importAttachments()}>
               <Upload className="h-4 w-4" />
             </IconButton>
-          ) : mode === "index" || mode === "graph" ? (
+          ) : mode === "index" || mode === "graph" || mode === "trash" ? (
             <span aria-hidden className="h-8 w-8" />
+          ) : mode === "notes" ? (
+            <IconButton label={t("library.newNote")} onClick={() => onCreate()}>
+              <Plus className="h-4 w-4" />
+            </IconButton>
           ) : (
             <IconButton label={t("library.newNote")} onClick={() => onCreate()}>
               <Plus className="h-4 w-4" />
@@ -170,8 +177,10 @@ export function NoteList({
         <NoteGraphPanel />
       ) : mode === "sync" ? (
         <CloudSyncPanel />
+      ) : mode === "trash" ? (
+        <TrashPanel />
       ) : mode === "notes" ? (
-        <div className="memoir-fade-in flex min-h-0 flex-1 flex-col">
+        <div className="memoir-panel-in flex min-h-0 flex-1 flex-col">
           <label className="note-search relative mx-3 mt-2.5 block">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
             <Input
@@ -307,7 +316,10 @@ function NoteCardWindow({
 
   return (
     <div
-      className="note-list-scroll grid flex-1 content-start gap-1.5 overflow-auto px-2.5 pb-3"
+      className={cn(
+        "note-list-scroll grid flex-1 content-start gap-1.5 overflow-auto px-2.5 pb-3",
+        !virtual && "memoir-stagger",
+      )}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       ref={scrollRef}
     >
@@ -423,7 +435,7 @@ function NoteCard({
         {note.favorite && <Star className="h-3.5 w-3.5 fill-accent text-accent" />}
       </div>
       <p className="mt-1.5 line-clamp-2 text-[11px] leading-[1.65] text-muted">
-        {note.excerpt || note.relativePath}
+        {note.snippet || note.excerpt || note.relativePath}
       </p>
       <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">

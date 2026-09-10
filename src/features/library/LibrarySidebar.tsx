@@ -14,9 +14,11 @@ import {
   PanelLeftOpen,
   Settings,
   SmilePlus,
+  Sparkles,
   Star,
   Sun,
   Tag as TagIcon,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { IconButton, cn } from "../../components/ui";
@@ -235,6 +237,8 @@ export function LibrarySidebar({
 }) {
   const libraryStats = useAppStore((state) => state.libraryStats);
   const attachments = useAppStore((state) => state.attachments);
+  const trash = useAppStore((state) => state.trash);
+  const refreshTrash = useAppStore((state) => state.refreshTrash);
   const navFilter = useAppStore((state) => state.navFilter);
   const scopedFilter = useAppStore((state) => state.scopedFilter);
   const libraryPanelMode = useAppStore((state) => state.libraryPanelMode);
@@ -400,11 +404,29 @@ export function LibrarySidebar({
             onClick={() => setLibraryPanelMode("index")}
           />
           <NavButton
+            active={libraryPanelMode === "trash"}
+            collapsed={collapsed}
+            count={trash.length}
+            icon={<Trash2 strokeWidth={1.8} />}
+            label={t("nav.trash")}
+            onClick={() => {
+              setLibraryPanelMode("trash");
+              void refreshTrash();
+            }}
+          />
+          <NavButton
             active={libraryPanelMode === "sync"}
             collapsed={collapsed}
             icon={<Cloud strokeWidth={1.8} />}
             label={t("nav.cloudSync")}
             onClick={() => setLibraryPanelMode("sync")}
+          />
+          <NavButton
+            active={libraryPanelMode === "ai"}
+            collapsed={collapsed}
+            icon={<Sparkles strokeWidth={1.8} />}
+            label={t("nav.aiWrite")}
+            onClick={() => setLibraryPanelMode("ai")}
           />
         </nav>
 

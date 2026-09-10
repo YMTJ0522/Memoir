@@ -17,6 +17,34 @@ describe("app store actions", () => {
     vi.useRealTimers();
   });
 
+  it("manages AI sessions: create, switch, update, delete", () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+
+    expect(store.getState().aiSessions).toEqual([]);
+    const first = store.getState().createAiSession();
+    expect(store.getState().aiSessions).toHaveLength(1);
+    expect(store.getState().activeAiSessionId).toBe(first);
+
+    const second = store.getState().createAiSession();
+    expect(store.getState().aiSessions).toHaveLength(2);
+    expect(store.getState().activeAiSessionId).toBe(second);
+
+    store.getState().updateAiSession(first, {
+      title: "第一问",
+      messages: [{ id: "m1", role: "user", content: "第一问" }],
+    });
+    store.getState().selectAiSession(first);
+    expect(store.getState().activeAiSessionId).toBe(first);
+    expect(
+      store.getState().aiSessions.find((session) => session.id === first)?.messages,
+    ).toHaveLength(1);
+
+    store.getState().deleteAiSession(first);
+    expect(store.getState().aiSessions).toHaveLength(1);
+    expect(store.getState().activeAiSessionId).toBe(second);
+  });
+
   it("loads workspace, restores draft, edits and saves through gateways", async () => {
     const gateways = createMockGateways();
     gateways.persistence.drafts.set("/workspace:one.md", "# Draft");
@@ -70,6 +98,39 @@ describe("app store actions", () => {
     expect(store.getState().notes.some((note) => note.relativePath === "renamed.mdx")).toBe(
       false,
     );
+  });
+
+  it("imports articles into the library and opens the last one", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    const reconcilesAfterOpen = gateways.workspace.reconcileCount;
+
+    gateways.workspace.nextImportedArticles = [
+      { fileName: "想法.txt", content: "1. 第一条\n2. 第二条\n\n# 随想" },
+      { fileName: "notes.html", content: "<h1>Web 文章</h1><p>正文</p>" },
+    ];
+await store.getState().importArticles();
+
+    expect(gateways.workspace.reconcileCount).toBe(reconcilesAfterOpen);
+    expect(store.getState().notes.some((note) => note.relativePath === "想法.md")).toBe(true);
+    expect(store.getState().notes.some((note) => note.relativePath === "web-文章.md")).toBe(true);
+    expect(store.getState().activePath).toBe("web-文章.md");
+    expect(store.getState().status).toBe(
+      t(resolveLocale(store.getState().settings.appearance.locale), "status.notesImported", {
+        count: 2,
+      }),
+    );
+  });
+
+  it("surfaces article import failures", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    gateways.workspace.failWrite = true;
+    await store.getState().importArticles();
+    expect(store.getState().error).toContain("disk full");
   });
 
   it("rebuilds the workspace index then refreshes notes", async () => {
@@ -398,6 +459,45 @@ describe("app store actions", () => {
     expect(store.getState().attachments).toEqual([]);
   });
 
+  it("deletes multiple attachments in one batch action", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    const saved = await store.getState().saveAttachments([
+      { bytesBase64: "AAAA", fileName: "batch-1.png", mimeType: "image/png" },
+      { bytesBase64: "BBBB", fileName: "batch-2.mp4", mimeType: "video/mp4" },
+      { bytesBase64: "CCCC", fileName: "batch-3.png", mimeType: "image/png" },
+    ]);
+    expect(saved).toHaveLength(3);
+
+    await store.getState().deleteAttachments([
+      saved[0]!.relativePath,
+      saved[2]!.relativePath,
+    ]);
+    expect(store.getState().attachments.map((item) => item.fileName)).toEqual(["batch-2.mp4"]);
+    expect(store.getState().error).toBe("");
+
+    // Deleting again with stale paths is a no-op that leaves state intact.
+    await store.getState().deleteAttachments([saved[0]!.relativePath]);
+    expect(store.getState().attachments).toHaveLength(1);
+  });
+
+  it("surfaces partial failures when batch deletion fails halfway", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    const saved = await store.getState().saveAttachments([
+      { bytesBase64: "AAAA", fileName: "fail-1.png", mimeType: "image/png" },
+      { bytesBase64: "BBBB", fileName: "fail-2.png", mimeType: "image/png" },
+    ]);
+
+    gateways.workspace.failAttachment = true;
+    await store.getState().deleteAttachments([saved[0]!.relativePath]);
+    expect(store.getState().error.length).toBeGreaterThan(0);
+    gateways.workspace.failAttachment = false;
+  });
+
   it("requires an open note before pasting images", async () => {
     const gateways = createMockGateways();
     const store = createAppStore(gateways);
@@ -412,20 +512,30 @@ describe("app store actions", () => {
     expect(gateways.workspace.savedAttachments).toEqual([]);
   });
 
-  it("imports dropped image files into the attachment library", async () => {
+  it("imports dropped files including documents and rejects unknown types", async () => {
     const gateways = createMockGateways();
     const store = createAppStore(gateways);
     await store.getState().openWorkspace("/workspace");
 
     const markdown = await store.getState().importDroppedImages([
-      "/tmp/notes.md",
+      "/tmp/run.exe",
       "/home/me/Pictures/diagram.webp",
+      "/home/me/Documents/报告.docx",
+      "/home/me/Archives/打包.zip",
     ]);
-    expect(gateways.workspace.importedPaths).toEqual(["/home/me/Pictures/diagram.webp"]);
+    expect(gateways.workspace.importedPaths).toEqual([
+      "/home/me/Pictures/diagram.webp",
+      "/home/me/Documents/报告.docx",
+      "/home/me/Archives/打包.zip",
+    ]);
     expect(markdown).toContain("diagram.webp");
+    // Documents and archives insert link syntax, media keeps embed syntax.
+    expect(markdown).toContain("[报告.docx](attachments/");
+    expect(markdown).toContain("[打包.zip](attachments/");
     expect(store.getState().attachments.some((item) => item.fileName === "diagram.webp")).toBe(
       true,
     );
+    expect(store.getState().attachments.some((item) => item.fileName === "报告.docx")).toBe(true);
   });
 
   it("does not reconcile or scan attachments on create rename delete or save", async () => {
@@ -701,5 +811,150 @@ describe("app store actions", () => {
     await store.getState().openWorkspace("/workspace");
     expect(draftsExist).toHaveBeenCalledTimes(1);
     expect(draftsExist.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(["one.md", "two.md"]));
+  });
+
+  it("snapshots the outgoing content before saving an edited note", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    const original = gateways.workspace.files.get("one.md") ?? "";
+
+    store.getState().setContent("# Edited");
+    await store.getState().saveActiveNote();
+
+    expect(gateways.persistence.snapshotCalls).toEqual([
+      {
+        workspaceRoot: "/workspace",
+        relativePath: "one.md",
+        oldContent: original,
+        newContent: "# Edited",
+        preserve: false,
+      },
+    ]);
+    expect(gateways.workspace.writes).toEqual([{ path: "one.md", content: "# Edited" }]);
+  });
+
+  it("does not snapshot when the note is not dirty", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    await store.getState().saveActiveNote();
+    expect(gateways.persistence.snapshotCalls).toEqual([]);
+  });
+
+  it("restores a version through an unconditional snapshot of the current content", async () => {
+    const gateways = createMockGateways();
+    gateways.persistence.noteVersions.set("/workspace:one.md", [
+      {
+        id: "v1",
+        title: "One",
+        size: 6,
+        createdAt: 1_000,
+        content: "# Older",
+      },
+    ]);
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    store.getState().setContent("# Edited");
+    await store.getState().saveActiveNote();
+
+    await store.getState().restoreNoteVersion("v1");
+
+    expect(gateways.persistence.snapshotCalls.at(-1)).toMatchObject({
+      relativePath: "one.md",
+      oldContent: "# Edited",
+      newContent: "# Older",
+      preserve: true,
+    });
+    expect(gateways.workspace.writes.at(-1)).toEqual({ path: "one.md", content: "# Older" });
+    expect(store.getState().content).toBe("# Older");
+    expect(store.getState().savedContent).toBe("# Older");
+    expect(gateways.persistence.drafts.has("/workspace:one.md")).toBe(false);
+  });
+
+  it("surfaces restore failures without changing the editor content", async () => {
+    const gateways = createMockGateways();
+    gateways.persistence.noteVersions.set("/workspace:one.md", [
+      { id: "v1", title: "One", size: 6, createdAt: 1_000, content: "# Older" },
+    ]);
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    gateways.persistence.failGetVersion = true;
+    await store.getState().restoreNoteVersion("v1");
+
+    expect(store.getState().content).toBe(gateways.workspace.files.get("one.md"));
+    expect(store.getState().error).toBeTruthy();
+  });
+
+  it("moves deleted notes into the trash and restores them back into the library", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    const original = gateways.workspace.files.get("one.md");
+    await store.getState().deleteActiveNote();
+    expect(store.getState().notes.some((note) => note.relativePath === "one.md")).toBe(false);
+    expect(gateways.workspace.trash.size).toBe(1);
+
+    await store.getState().refreshTrash();
+    expect(store.getState().trash).toHaveLength(1);
+    const entry = store.getState().trash[0];
+    expect(entry.originalPath).toBe("one.md");
+    expect(entry.isAttachment).toBe(false);
+
+    await store.getState().restoreTrashItem(entry.trashName);
+    expect(store.getState().trash).toHaveLength(0);
+    expect(store.getState().notes.some((note) => note.relativePath === "one.md")).toBe(true);
+    expect(gateways.workspace.files.get("one.md")).toBe(original);
+  });
+
+  it("purges a single trash item and empties the trash on demand", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    await store.getState().deleteActiveNote();
+    await store.getState().createNote({ title: "Two", extension: "md" });
+    await store.getState().deleteActiveNote();
+    await store.getState().refreshTrash();
+    expect(store.getState().trash).toHaveLength(2);
+
+    const [first] = store.getState().trash;
+    await store.getState().purgeTrashItem(first.trashName);
+    expect(store.getState().trash).toHaveLength(1);
+    expect(gateways.workspace.trash.size).toBe(1);
+
+    await store.getState().emptyTrash();
+    expect(store.getState().trash).toHaveLength(0);
+    expect(gateways.workspace.trash.size).toBe(0);
+    expect(store.getState().status).toBe(
+      t(resolveLocale(store.getState().settings.appearance.locale), "status.trashEmptied"),
+    );
+  });
+
+  it("moves deleted attachments into the trash with the attachment flag", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    const [saved] = await store.getState().saveAttachments([
+      { bytesBase64: "AAAA", fileName: "trash-attach.png", mimeType: "image/png" },
+    ]);
+    await store.getState().deleteAttachments([saved!.relativePath]);
+    await store.getState().refreshTrash();
+
+    const entry = store.getState().trash.find(
+      (item) => item.originalPath === saved!.relativePath,
+    );
+    expect(entry?.isAttachment).toBe(true);
+
+    await store.getState().restoreTrashItem(entry!.trashName);
+    expect(
+      store.getState().attachments.some((item) => item.relativePath === saved!.relativePath),
+    ).toBe(true);
+    expect(store.getState().trash).toHaveLength(0);
   });
 });

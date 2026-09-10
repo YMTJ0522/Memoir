@@ -3,7 +3,7 @@ use regex::Regex;
 use serde_yaml::Value;
 use std::sync::OnceLock;
 
-pub const PARSE_ALGO_VERSION: u32 = 2;
+pub const PARSE_ALGO_VERSION: u32 = 3;
 pub const INDEX_READ_CAP: usize = 1024 * 1024;
 pub const EXCERPT_LEN: usize = 150;
 
@@ -13,6 +13,8 @@ pub struct ParsedNote {
     pub tags: Vec<String>,
     pub excerpt: String,
     pub links: Vec<RawNoteLink>,
+    /// Body with frontmatter stripped — feeds the full-text index.
+    pub body: String,
 }
 
 pub fn parse_note(content: &str, fallback_file_name: &str) -> ParsedNote {
@@ -28,6 +30,7 @@ pub fn parse_note(content: &str, fallback_file_name: &str) -> ParsedNote {
                     tags: parse_tags(&data),
                     excerpt: build_excerpt(&body),
                     links: extract_note_links(content),
+                    body,
                 }
             }
             Err(_) => fallback_parse(content, fallback_file_name),
@@ -66,6 +69,7 @@ fn fallback_parse(content: &str, fallback_file_name: &str) -> ParsedNote {
         tags: Vec::new(),
         excerpt: build_excerpt(&body),
         links: extract_note_links(content),
+        body,
     }
 }
 
@@ -128,7 +132,7 @@ fn parse_frontmatter_data(matter: &str) -> Result<Value, ()> {
     if stripped.trim().is_empty() {
         return Ok(Value::Mapping(serde_yaml::Mapping::new()));
     }
-    serde_yaml::from_str::<Value>(matter).map_err(|_| ())
+    serde_yaml::from_str::<Value>(&stripped).map_err(|_| ())
 }
 
 fn strip_yaml_comment_lines(matter: &str) -> String {
@@ -329,6 +333,39 @@ mod tests {
         let parsed = parse_note(&prefix, "cap.md");
         assert_eq!(parsed.title, "Cap");
         assert!(parsed.parse_is_from_frontmatter());
+    }
+
+    #[test]
+    fn comment_lines_are_stripped_before_yaml_parse() {
+        // A comment line containing invalid YAML (unterminated bracket) must not
+        // make the whole frontmatter fail; it has to be ignored by the parser.
+        let content = "---\n# tags: [unterminated\ntitle: Comment Cap\n---\n\nbody";
+        let parsed = parse_note(content, "comment.md");
+        assert_eq!(parsed.title, "Comment Cap");
+        assert!(parsed.tags.is_empty());
+    }
+
+    #[test]
+    fn comment_only_frontmatter_yields_empty_mapping() {
+        let content = "---\n# just a comment\n---\n\n# Heading\n";
+        let parsed = parse_note(content, "comment.md");
+        assert_eq!(parsed.title, "Heading");
+    }
+
+    #[test]
+    fn body_strips_frontmatter_in_both_paths() {
+        let frontmatter = "---\ntitle: Body Cap\n---\n\nActual body text";
+        let parsed = parse_note(frontmatter, "a.md");
+        assert_eq!(parsed.body.trim(), "Actual body text");
+
+        let no_frontmatter = "Just a body";
+        let parsed = parse_note(no_frontmatter, "b.md");
+        assert_eq!(parsed.body, "Just a body");
+
+        // Fallback path (invalid YAML after comment stripping) also strips.
+        let broken = "---\ntitle: [unclosed\n---\n\nFallback body";
+        let parsed = parse_note(broken, "c.md");
+        assert_eq!(parsed.body.trim(), "Fallback body");
     }
 
     impl ParsedNote {

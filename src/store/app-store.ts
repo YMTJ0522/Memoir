@@ -10,10 +10,10 @@ import { create } from "zustand";
 import type { AppGateways } from "../gateways/contracts";
 import { getGateways } from "../gateways";
 import {
+  attachmentPathsFromDrop,
   fileToBase64,
-  imagePathsFromDrop,
   markdownForAttachments,
-  MAX_ATTACHMENT_BYTES,
+  maxAttachmentBytesForFile,
   suggestedPasteFileName,
   type AttachmentFile,
   type SaveAttachmentInput,
@@ -47,7 +47,7 @@ import { flushLiveEditor } from "../domain/live-editor";
 import { parseNote } from "../features/library/note-utils";
 import { resolveLocale } from "../i18n/locale";
 import { t, tc, type MessageKey, type MessageParams } from "../i18n/translate";
-import type { AppStore } from "./types";
+import type { AppStore, AiSession, AiChatMessage } from "./types";
 
 function storeLocale(settings: AppSettings) {
   return resolveLocale(settings.appearance.locale);
@@ -62,6 +62,7 @@ const DRAFT_DEBOUNCE_MS = 450;
 const QUERY_DEBOUNCE_MS = 150;
 const CLOUD_SYNC_DEBOUNCE_MS = 15_000;
 const CLOUD_SYNC_OPEN_DELAY_MS = 2_000;
+const AI_SESSIONS_DEBOUNCE_MS = 400;
 export const AUTOSAVE_INTERVAL_MS = 3000;
 export const NOTE_METADATA_DEBOUNCE_MS = 80;
 
@@ -155,6 +156,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
   let cloudSyncProgressWatch: Promise<void> | null = null;
   let metadataTimer: number | null = null;
   let metadataPath: string | null = null;
+  let aiSessionsTimer: number | null = null;
 
   const store = create<AppStore>((set, get) => {
     const persistPreferences = () => {
@@ -273,7 +275,12 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
     const runScheduledCloudSync = async () => {
       const state = get();
       if (!state.workspaceRoot || !state.cloudSyncProfile.enabled) return;
-      await get().runCloudSync();
+      try {
+        await get().runCloudSync();
+      } catch {
+        // runCloudSync already records the failure in `error`; scheduled runs
+        // must not surface an unhandled promise rejection.
+      }
     };
 
     const ensureCloudSyncProgressWatch = () => {
@@ -298,6 +305,36 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
       } catch {
         set({ cloudSyncProfile: defaultCloudSyncProfile() });
       }
+    };
+
+    const persistAiSessions = () => {
+      if (aiSessionsTimer !== null) window.clearTimeout(aiSessionsTimer);
+      aiSessionsTimer = window.setTimeout(async () => {
+        aiSessionsTimer = null;
+        const state = get();
+        try {
+          await gateways.persistence.saveAiSessions(
+            state.aiSessions.map((session) => ({
+              id: session.id,
+              title: session.title,
+              createdAt: session.createdAt,
+              messages: session.messages.map((message) => ({
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                reasoning: message.reasoning ?? null,
+              })),
+            })),
+            state.activeAiSessionId,
+          );
+        } catch (error) {
+          set({
+            error: storeT(state.settings, "errors.saveAiSessions", {
+              message: toMessage(error),
+            }),
+          });
+        }
+      }, AI_SESSIONS_DEBOUNCE_MS);
     };
 
     const currentQuery = (state = get()): LibraryQuery =>
@@ -393,6 +430,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
       libraryStats: emptyLibraryStats(),
       favoritePaths: [],
       attachments: [],
+      trash: [],
       isLoading: false,
       folderAppearances: {},
       activePath: null,
@@ -404,6 +442,8 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
       navFilter: "all",
       scopedFilter: null,
       libraryPanelMode: "notes",
+      aiSessions: [],
+      activeAiSessionId: null,
       settings: DEFAULT_SETTINGS,
       initialized: false,
       status: storeT(DEFAULT_SETTINGS, "status.openFolder"),
@@ -436,6 +476,22 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
             folderAppearances: workspaceRoot
               ? folderAppearancesForWorkspace(appState.folderAppearances, workspaceRoot)
               : {},
+            aiSessions: (appState.aiSessions ?? []).map((session) => ({
+              id: session.id,
+              title: session.title,
+              createdAt: session.createdAt,
+              messages: session.messages.flatMap((message) => {
+                if (message.role !== "user" && message.role !== "assistant") return [];
+                const narrowed: AiChatMessage = {
+                  id: message.id,
+                  role: message.role,
+                  content: message.content,
+                  reasoning: message.reasoning ?? undefined,
+                };
+                return [narrowed];
+              }),
+            })),
+            activeAiSessionId: appState.activeAiSessionId ?? null,
           });
           if (workspaceRoot) {
             await loadCloudSyncProfile(workspaceRoot);
@@ -535,11 +591,12 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         if (!root) return;
         set({ isLoading: true, error: "" });
         try {
-          const [page, attachments] = await Promise.all([
+          const [page, attachments, trash] = await Promise.all([
             gateways.workspace.reconcileWorkspace(root, currentQuery()),
             gateways.workspace.scanAttachments(root),
+            gateways.workspace.listTrash(root).catch(() => []),
           ]);
-          set({ attachments });
+          set({ attachments, trash });
           await applyLibraryPage(root, page, preferredPath);
         } catch (error) {
           set({
@@ -592,13 +649,23 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
 
       async saveActiveNote() {
         syncLiveEditorContent();
-        const { workspaceRoot, activePath, content, loadedContentPath, isSaving } = get();
+        const { workspaceRoot, activePath, content, savedContent, loadedContentPath, isSaving } =
+          get();
         if (!workspaceRoot || !activePath || loadedContentPath !== activePath || isSaving) return;
         const saveRoot = workspaceRoot;
         const savePath = activePath;
         const saveContent = content;
+        const outgoingContent = savedContent;
         set({ isSaving: true, error: "" });
         try {
+          if (outgoingContent && outgoingContent !== saveContent) {
+            await gateways.persistence.snapshotNoteVersion(
+              saveRoot,
+              savePath,
+              outgoingContent,
+              saveContent,
+            );
+          }
           await gateways.workspace.writeNote(saveRoot, savePath, saveContent);
           await gateways.persistence.deleteDraft(saveRoot, savePath);
           set((state) => {
@@ -750,6 +817,58 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         await get().deleteNote(activePath);
       },
 
+      async restoreNoteVersion(versionId) {
+        syncLiveEditorContent();
+        const { workspaceRoot, activePath, savedContent, loadedContentPath } = get();
+        if (!workspaceRoot || !activePath || loadedContentPath !== activePath) return;
+        try {
+          const version = await gateways.persistence.getNoteVersion(
+            workspaceRoot,
+            activePath,
+            versionId,
+          );
+          if (savedContent) {
+            await gateways.persistence.snapshotNoteVersion(
+              workspaceRoot,
+              activePath,
+              savedContent,
+              version.content,
+              true,
+            );
+          }
+          const updated = await gateways.workspace.writeNote(
+            workspaceRoot,
+            activePath,
+            version.content,
+          );
+          await gateways.persistence.deleteDraft(workspaceRoot, activePath);
+          set((state) => {
+            const isActive = state.activePath === activePath;
+            return {
+              content: isActive ? version.content : state.content,
+              savedContent: isActive ? version.content : state.savedContent,
+              loadedContentPath: isActive ? activePath : state.loadedContentPath,
+              status: storeT(state.settings, "status.versionRestored"),
+              notes: state.notes.map((note) =>
+                note.relativePath === activePath
+                  ? {
+                      ...note,
+                      ...parseNote(version.content, note.fileName),
+                      modifiedMs: updated.modifiedMs,
+                    }
+                  : note,
+              ),
+            };
+          });
+        } catch (error) {
+          set({
+            error: storeT(get().settings, "errors.restoreVersion", {
+              message: toMessage(error),
+            }),
+          });
+        }
+      },
+
       async setFolderAppearance(folder, appearance) {
         const { workspaceRoot, folderAppearances } = get();
         if (!workspaceRoot) return;
@@ -854,7 +973,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
           set({ error: storeT(settings, "errors.pasteNeedsNote") });
           return "";
         }
-        const oversized = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+        const oversized = files.find((file) => file.size > maxAttachmentBytesForFile(file));
         if (oversized) {
           set({ error: storeT(settings, "errors.attachmentTooLarge") });
           return "";
@@ -872,7 +991,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
 
       async importDroppedImages(sourcePaths) {
         const { workspaceRoot, activePath, settings } = get();
-        const paths = imagePathsFromDrop(sourcePaths);
+        const paths = attachmentPathsFromDrop(sourcePaths);
         if (!workspaceRoot || paths.length === 0) return "";
         if (!activePath) {
           set({ error: storeT(settings, "errors.pasteNeedsNote") });
@@ -919,6 +1038,31 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         }
       },
 
+      async importArticles() {
+        syncLiveEditorContent();
+        const root = get().workspaceRoot;
+        if (!root) return;
+        set({ isLoading: true, error: "" });
+        try {
+          const imported = await gateways.workspace.importArticles(root);
+          if (!imported.length) {
+            set({ isLoading: false });
+            return;
+          }
+          const page = await gateways.workspace.queryLibrary(root, currentQuery());
+          const lastPath = imported[imported.length - 1].relativePath;
+          await applyLibraryPage(root, page, lastPath);
+          set({
+            status: storeT(get().settings, "status.notesImported", { count: imported.length }),
+          });
+        } catch (error) {
+          set({
+            isLoading: false,
+            error: storeT(get().settings, "errors.importNote", { message: toMessage(error) }),
+          });
+        }
+      },
+
       async deleteAttachment(relativePath) {
         const root = get().workspaceRoot;
         if (!root || !relativePath) return;
@@ -932,6 +1076,108 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         } catch (error) {
           set({
             error: storeT(get().settings, "errors.deleteAttachment", { message: toMessage(error) }),
+          });
+        }
+      },
+
+      async deleteAttachments(relativePaths) {
+        const root = get().workspaceRoot;
+        const paths = [...new Set(relativePaths)].filter(Boolean);
+        if (!root || paths.length === 0) return;
+        const failed: string[] = [];
+        const deleted: string[] = [];
+        for (const relativePath of paths) {
+          try {
+            await gateways.workspace.deleteAttachment(root, relativePath);
+            deleted.push(relativePath);
+          } catch {
+            failed.push(relativePath);
+          }
+        }
+        if (deleted.length) {
+          const removed = new Set(deleted);
+          set({
+            attachments: get().attachments.filter((item) => !removed.has(item.relativePath)),
+            status: storeT(get().settings, "status.attachmentsDeleted", { count: deleted.length }),
+            error: "",
+          });
+        }
+        if (failed.length) {
+          set({
+            error: storeT(get().settings, "errors.deleteAttachment", {
+              message: storeT(get().settings, "errors.attachmentsPartialDelete", {
+                count: failed.length,
+              }),
+            }),
+          });
+        }
+      },
+
+      async refreshTrash() {
+        const root = get().workspaceRoot;
+        if (!root) {
+          set({ trash: [] });
+          return;
+        }
+        try {
+          set({ trash: await gateways.workspace.listTrash(root) });
+        } catch (error) {
+          set({
+            error: storeT(get().settings, "errors.loadTrash", { message: toMessage(error) }),
+          });
+        }
+      },
+
+      async restoreTrashItem(trashName) {
+        const root = get().workspaceRoot;
+        if (!root || !trashName) return;
+        try {
+          const restoredPath = await gateways.workspace.restoreTrashItem(root, trashName);
+          set({
+            trash: get().trash.filter((entry) => entry.trashName !== trashName),
+            status: storeT(get().settings, "status.trashRestored"),
+            error: "",
+          });
+          // The note is back on disk; refresh the library so it shows up.
+          await get().refreshWorkspace(restoredPath);
+          await get().refreshAttachments();
+        } catch (error) {
+          set({
+            error: storeT(get().settings, "errors.restoreTrash", { message: toMessage(error) }),
+          });
+        }
+      },
+
+      async purgeTrashItem(trashName) {
+        const root = get().workspaceRoot;
+        if (!root || !trashName) return;
+        try {
+          await gateways.workspace.purgeTrashItem(root, trashName);
+          set({
+            trash: get().trash.filter((entry) => entry.trashName !== trashName),
+            status: storeT(get().settings, "status.trashPurged"),
+            error: "",
+          });
+        } catch (error) {
+          set({
+            error: storeT(get().settings, "errors.purgeTrash", { message: toMessage(error) }),
+          });
+        }
+      },
+
+      async emptyTrash() {
+        const root = get().workspaceRoot;
+        if (!root) return;
+        try {
+          await gateways.workspace.emptyTrash(root);
+          set({
+            trash: [],
+            status: storeT(get().settings, "status.trashEmptied"),
+            error: "",
+          });
+        } catch (error) {
+          set({
+            error: storeT(get().settings, "errors.emptyTrash", { message: toMessage(error) }),
           });
         }
       },
@@ -965,10 +1211,49 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         void runLibraryQuery();
       },
       setLibraryPanelMode(libraryPanelMode) {
+        const isMainArea = libraryPanelMode === "graph" || libraryPanelMode === "ai";
         set({
           libraryPanelMode,
-          mobilePanel: libraryPanelMode === "graph" ? "editor" : "library",
+          mobilePanel: isMainArea ? "editor" : "library",
         });
+      },
+      createAiSession() {
+        const id = `ai-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const session: AiSession = {
+          id,
+          title: storeT(get().settings, "ai.newChat"),
+          createdAt: Date.now(),
+          messages: [],
+        };
+        set((state) => ({
+          aiSessions: [...state.aiSessions, session],
+          activeAiSessionId: id,
+        }));
+        persistAiSessions();
+        return id;
+      },
+      selectAiSession(id) {
+        set({ activeAiSessionId: id });
+        persistAiSessions();
+      },
+      deleteAiSession(id) {
+        set((state) => {
+          const sessions = state.aiSessions.filter((session) => session.id !== id);
+          const activeAiSessionId =
+            state.activeAiSessionId === id
+              ? (sessions.at(-1)?.id ?? null)
+              : state.activeAiSessionId;
+          return { aiSessions: sessions, activeAiSessionId };
+        });
+        persistAiSessions();
+      },
+      updateAiSession(id, patch) {
+        set((state) => ({
+          aiSessions: state.aiSessions.map((session) =>
+            session.id === id ? { ...session, ...patch } : session,
+          ),
+        }));
+        persistAiSessions();
       },
       setViewMode(viewMode) {
         set({ viewMode });
@@ -1067,7 +1352,9 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
           set({ cloudSyncProgress: null });
           if (cloudSyncPending) {
             cloudSyncPending = false;
-            void get().runCloudSync();
+            void get().runCloudSync().catch(() => {
+              // Failure is already surfaced via the `error` state above.
+            });
           }
         }
       },

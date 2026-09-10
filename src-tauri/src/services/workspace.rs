@@ -3,7 +3,7 @@ use crate::{
         note_parse::{decode_utf8_prefix, parse_note, INDEX_READ_CAP, PARSE_ALGO_VERSION},
         path::normalize_root,
         AppError, AppResult, AttachmentFile, ErrorCode, FileIdentity, LibraryPage, LibraryQuery,
-        NoteFile, NoteGraph, NoteIdentity, RenamedNote, WorkspaceIndexInfo,
+        NoteFile, NoteGraph, NoteIdentity, RenamedNote, TrashEntry, WorkspaceIndexInfo,
     },
     infrastructure::{
         filesystem::{modified_ms, LocalFileSystem},
@@ -222,6 +222,20 @@ impl WorkspaceService {
         self.index_written_note(root, &relative, None)
     }
 
+    /// Persist a converted article as a new note and keep the index fresh.
+    pub fn import_note(
+        &self,
+        root: &str,
+        title: &str,
+        markdown: &str,
+        folder: Option<&str>,
+    ) -> AppResult<NoteFile> {
+        let relative = self
+            .filesystem
+            .import_note(root, title, markdown, folder)?;
+        self.index_written_note(root, &relative, None)
+    }
+
     pub fn rename(
         &self,
         root: &str,
@@ -323,6 +337,29 @@ impl WorkspaceService {
         self.filesystem.delete_attachment(root, relative_path)
     }
 
+    pub fn list_trash(&self, root: &str) -> AppResult<Vec<TrashEntry>> {
+        self.filesystem.list_trash(root)
+    }
+
+    pub fn restore_trash_item(&self, root: &str, trash_name: &str) -> AppResult<String> {
+        let restored = self.filesystem.restore_trash_item(root, trash_name)?;
+        // Restored note: make sure the index picks it up again.
+        if let Ok(root_path) = normalize_root(root) {
+            self.write_through(&root_path, |conn| {
+                resolve_note_links(conn)
+            });
+        }
+        Ok(restored)
+    }
+
+    pub fn purge_trash_item(&self, root: &str, trash_name: &str) -> AppResult<()> {
+        self.filesystem.purge_trash_item(root, trash_name)
+    }
+
+    pub fn empty_trash(&self, root: &str) -> AppResult<()> {
+        self.filesystem.empty_trash(root)
+    }
+
     pub fn write_export_file(&self, path: &str, bytes_base64: &str) -> AppResult<()> {
         let bytes = decode_base64(bytes_base64, "Export data is not valid base64.")?;
         self.filesystem.write_export_file(path, &bytes)
@@ -364,6 +401,7 @@ impl WorkspaceService {
             false,
             parsed.title,
             parsed.excerpt,
+            parsed.body,
             &parsed.tags,
         )
         .with_links(parsed.links);
@@ -474,6 +512,7 @@ impl WorkspaceService {
                 opened.size > bytes_decoded,
                 parsed_note.title,
                 parsed_note.excerpt,
+                parsed_note.body,
                 &parsed_note.tags,
             )
             .with_links(parsed_note.links),

@@ -79,6 +79,19 @@ describe("note utilities", () => {
     expect(parsed.title).toBe("Project Plan");
     expect(parsed.tags).toEqual(["roadmap", "team"]);
     expect(parsed.excerpt).toContain("Useful summary");
+    expect(parsed.frontmatter).toEqual({ title: "Project Plan", tags: ["roadmap", "team"] });
+  });
+
+  it("returns raw frontmatter data only when a leading block exists", () => {
+    expect(parseNote("---\nauthor: Ada\n---\n\nBody", "note.md").frontmatter).toEqual({
+      author: "Ada",
+    });
+    // Horizontal rules that merely look like frontmatter stay out.
+    expect(parseNote("Body\n\n---\n\nMore", "note.md").frontmatter).toBeNull();
+    // Empty blocks (only `---` markers) expose no data.
+    expect(parseNote("---\n---\n\nBody", "note.md").frontmatter).toBeNull();
+    // Notes without any block stay null.
+    expect(parseNote("# Plain\n", "note.md").frontmatter).toBeNull();
   });
 
   it("resolves title from frontmatter, then first h1, then filename", () => {

@@ -3,9 +3,9 @@ use crate::{
         attachment::ATTACHMENTS_DIR, AppError, AppSettings, AppState, AppUpdateCheck,
         AttachmentFile, CloudSyncProbe, CloudSyncProfile, CloudSyncRunResult, FolderAppearance,
         LegacyStatePayload, LibraryPage, LibraryQuery, MigrationResult, NoteFile, NoteGraph,
-        RenamedNote, WorkspaceIndexInfo, WorkspaceLayout,
+        NoteVersion, NoteVersionMeta, RenamedNote, TrashEntry, WorkspaceIndexInfo, WorkspaceLayout,
     },
-    infrastructure::{github_releases, link_preview},
+    infrastructure::{ai_client, github_releases, link_preview},
     services::{AppStateService, CloudSyncService, WorkspaceService},
     tray::ClosePolicy,
 };
@@ -15,7 +15,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 fn allow_workspace_media(app: &AppHandle, root: &str) {
     let path = PathBuf::from(root);
-    let path = path.canonicalize().unwrap_or(path);
+    let canonical = path.canonicalize().unwrap_or(path);
+    let path = dunce::simplified(&canonical).to_path_buf();
     let scope = app.asset_protocol_scope();
     let _ = scope.allow_directory(&path, true);
     let _ = scope.allow_directory(path.join(ATTACHMENTS_DIR), true);
@@ -99,6 +100,32 @@ pub fn create_note(
         folder.as_deref(),
         tags.as_deref(),
     )
+}
+
+/// Reads a local file selected by the "import article" flow: UTF-8/GBK text
+/// plus raw bytes (base64) for formats the webview converts (docx).
+#[tauri::command]
+pub fn read_import_source(
+    services: State<'_, AppServices>,
+    source_path: String,
+) -> Result<crate::domain::import_source::ImportSourcePayload, AppError> {
+    Ok(crate::domain::import_source::read_import_source(&source_path)?.into_payload())
+}
+
+/// Writes one converted article as a new note (frontmatter + markdown body).
+#[tauri::command]
+pub fn import_note(
+    app: AppHandle,
+    services: State<'_, AppServices>,
+    root: String,
+    title: String,
+    markdown: String,
+    folder: Option<String>,
+) -> Result<NoteFile, AppError> {
+    allow_workspace_media(&app, &root);
+    services
+        .workspace
+        .import_note(&root, &title, &markdown, folder.as_deref())
 }
 
 #[tauri::command]
@@ -194,7 +221,7 @@ pub fn drafts_exist(
 }
 
 #[tauri::command]
-pub fn save_attachment(
+pub async fn save_attachment(
     app: AppHandle,
     services: State<'_, AppServices>,
     root: String,
@@ -203,23 +230,43 @@ pub fn save_attachment(
     mime_type: Option<String>,
 ) -> Result<AttachmentFile, AppError> {
     allow_workspace_media(&app, &root);
-    services.workspace.save_attachment(
-        &root,
-        &bytes_base64,
-        file_name.as_deref(),
-        mime_type.as_deref(),
-    )
+    let workspace = services.workspace.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        workspace.save_attachment(
+            &root,
+            &bytes_base64,
+            file_name.as_deref(),
+            mime_type.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(
+            crate::domain::ErrorCode::Io,
+            "Attachment save interrupted.",
+        )
+        .with_details(error.to_string())
+    })?
 }
 
 #[tauri::command]
-pub fn import_attachment(
+pub async fn import_attachment(
     app: AppHandle,
     services: State<'_, AppServices>,
     root: String,
     source_path: String,
 ) -> Result<AttachmentFile, AppError> {
     allow_workspace_media(&app, &root);
-    services.workspace.import_attachment(&root, &source_path)
+    let workspace = services.workspace.clone();
+    tauri::async_runtime::spawn_blocking(move || workspace.import_attachment(&root, &source_path))
+        .await
+        .map_err(|error| {
+            AppError::new(
+                crate::domain::ErrorCode::Io,
+                "Attachment import interrupted.",
+            )
+            .with_details(error.to_string())
+        })?
 }
 
 #[tauri::command]
@@ -229,6 +276,39 @@ pub fn delete_attachment(
     relative_path: String,
 ) -> Result<String, AppError> {
     services.workspace.delete_attachment(&root, &relative_path)
+}
+
+#[tauri::command]
+pub fn list_trash(
+    services: State<'_, AppServices>,
+    root: String,
+) -> Result<Vec<TrashEntry>, AppError> {
+    services.workspace.list_trash(&root)
+}
+
+#[tauri::command]
+pub fn restore_trash_item(
+    app: AppHandle,
+    services: State<'_, AppServices>,
+    root: String,
+    trash_name: String,
+) -> Result<String, AppError> {
+    allow_workspace_media(&app, &root);
+    services.workspace.restore_trash_item(&root, &trash_name)
+}
+
+#[tauri::command]
+pub fn purge_trash_item(
+    services: State<'_, AppServices>,
+    root: String,
+    trash_name: String,
+) -> Result<(), AppError> {
+    services.workspace.purge_trash_item(&root, &trash_name)
+}
+
+#[tauri::command]
+pub fn empty_trash(services: State<'_, AppServices>, root: String) -> Result<(), AppError> {
+    services.workspace.empty_trash(&root)
 }
 
 #[tauri::command]
@@ -355,6 +435,47 @@ pub fn delete_draft(
 }
 
 #[tauri::command]
+pub fn list_note_versions(
+    services: State<'_, AppServices>,
+    workspace_root: String,
+    relative_path: String,
+) -> Result<Vec<NoteVersionMeta>, AppError> {
+    services
+        .app_state
+        .list_note_versions(&workspace_root, &relative_path)
+}
+
+#[tauri::command]
+pub fn get_note_version(
+    services: State<'_, AppServices>,
+    workspace_root: String,
+    relative_path: String,
+    version_id: String,
+) -> Result<NoteVersion, AppError> {
+    services
+        .app_state
+        .get_note_version(&workspace_root, &relative_path, &version_id)
+}
+
+#[tauri::command]
+pub fn snapshot_note_version(
+    services: State<'_, AppServices>,
+    workspace_root: String,
+    relative_path: String,
+    old_content: String,
+    new_content: String,
+    preserve: Option<bool>,
+) -> Result<(), AppError> {
+    services.app_state.snapshot_note_version(
+        &workspace_root,
+        &relative_path,
+        &old_content,
+        &new_content,
+        preserve.unwrap_or(false),
+    )
+}
+
+#[tauri::command]
 pub fn get_cloud_sync_profile(
     services: State<'_, AppServices>,
     workspace_root: String,
@@ -428,4 +549,109 @@ pub async fn fetch_link_preview_html(url: String) -> Result<String, AppError> {
             AppError::new(crate::domain::ErrorCode::Io, "Link preview interrupted.")
                 .with_details(error.to_string())
         })?
+}
+
+/// OpenAI-compatible chat completion, driven by the user's AI settings.
+#[tauri::command]
+pub async fn chat_completion(
+    services: State<'_, AppServices>,
+    input: ai_client::AiChatCompletionInput,
+) -> Result<String, AppError> {
+    let ai = services.app_state.load()?.preferences.ai;
+    tauri::async_runtime::spawn_blocking(move || ai_client::chat_completion(&ai, &input))
+        .await
+        .map_err(|error| {
+            AppError::new(crate::domain::ErrorCode::Io, "AI chat interrupted.")
+                .with_details(error.to_string())
+        })?
+}
+
+/// Streaming chat completion. Emits `ai-chat-delta` events (content) and
+/// `ai-chat-reasoning` events (thinking trace) to the given window while
+/// the reply is being generated; returns the final combined reply.
+#[tauri::command]
+pub async fn chat_completion_stream(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    services: State<'_, AppServices>,
+    request_id: String,
+    input: ai_client::AiChatCompletionInput,
+) -> Result<ai_client::AiChatReplyPayload, AppError> {
+    let ai = services.app_state.load()?.preferences.ai;
+    let app_for_thread = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let window_label = window.label().to_string();
+        let emit_delta = |piece: &str| {
+            let _ = app_for_thread.emit_to(
+                &window_label,
+                "ai-chat-delta",
+                StreamEvent {
+                    request_id: request_id.clone(),
+                    piece: piece.to_string(),
+                },
+            );
+        };
+        let emit_reasoning = |piece: &str| {
+            let _ = app_for_thread.emit_to(
+                &window_label,
+                "ai-chat-reasoning",
+                StreamEvent {
+                    request_id: request_id.clone(),
+                    piece: piece.to_string(),
+                },
+            );
+        };
+        let reply = ai_client::chat_completion_stream(&ai, &input, emit_delta, emit_reasoning)?;
+        Ok(ai_client::AiChatReplyPayload::from(reply))
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(crate::domain::ErrorCode::Io, "AI chat interrupted.")
+            .with_details(error.to_string())
+    })?
+}
+
+/// Payload streamed back to the frontend when a streaming chat finishes.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamEvent {
+    request_id: String,
+    piece: String,
+}
+
+/// Persists AI chat sessions (chat history across restarts).
+#[tauri::command]
+pub fn save_ai_sessions(
+    services: State<'_, AppServices>,
+    sessions: Vec<crate::domain::AiSessionRecord>,
+    active_ai_session_id: Option<String>,
+) -> Result<(), AppError> {
+    services
+        .app_state
+        .save_ai_sessions(sessions, active_ai_session_id)
+        .map(|_| ())
+}
+
+/// Validates AI settings and (optionally) sends a minimal probe request.
+#[tauri::command]
+pub async fn test_ai_connection(
+    services: State<'_, AppServices>,
+) -> Result<String, AppError> {
+    let ai = services.app_state.load()?.preferences.ai;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_client::validate_config(&ai)?;
+        let probe = ai_client::AiChatCompletionInput {
+            messages: vec![ai_client::AiChatMessage {
+                role: "user".into(),
+                content: "ping".into(),
+            }],
+            temperature: None,
+        };
+        ai_client::chat_completion(&ai, &probe)
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(crate::domain::ErrorCode::Io, "AI connection test interrupted.")
+            .with_details(error.to_string())
+    })?
 }

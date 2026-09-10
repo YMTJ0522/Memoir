@@ -5,13 +5,13 @@ import { DEFAULT_SETTINGS } from "../../domain/settings";
 import { setGatewaysForTests } from "../../gateways";
 import { useAppStore } from "../../store/app-store";
 import { createMockGateways } from "../../test/mock-gateways";
-import { exportNotePdf } from "../export/export-note-pdf";
+import { exportNote } from "../export/export-note";
 import { NoteList } from "./NoteList";
 import * as noteUtils from "./note-utils";
 import { resetCollapsedHeadingIds } from "./outline-tree";
 
-vi.mock("../export/export-note-pdf", () => ({
-  exportNotePdf: vi.fn(),
+vi.mock("../export/export-note", () => ({
+  exportNote: vi.fn(),
 }));
 
 afterEach(() => {
@@ -289,7 +289,20 @@ describe("NoteList", () => {
     expect(view.queryByRole("button", { name: "大纲" })).not.toBeInTheDocument();
     expect(view.getByRole("heading", { name: "附件" })).toBeInTheDocument();
     expect(view.getByText("shot.png")).toBeInTheDocument();
-    expect(view.getByRole("button", { name: "导入图片" })).toBeInTheDocument();
+    expect(view.getByRole("button", { name: "导入图片 / 视频" })).toBeInTheDocument();
+  });
+
+  it("keeps the notes header to just the new note button (import lives in the editor toolbar)", () => {
+    useAppStore.setState({
+      libraryPanelMode: "notes",
+      workspaceRoot: "/workspace",
+    });
+    const view = render(
+      <NoteList onCreate={() => undefined} onDelete={() => undefined} onRename={() => undefined} />,
+    );
+
+    expect(view.queryByRole("button", { name: "导入文章" })).not.toBeInTheDocument();
+    expect(view.getByRole("button", { name: "新建笔记" })).toBeInTheDocument();
   });
 
   it("shows the index inspector from the sidebar, not a duplicate header tab", async () => {
@@ -450,6 +463,6 @@ describe("NoteList", () => {
       clientY: 48,
     });
     await user.click(view.getByRole("menuitem", { name: "导出 PDF" }));
-    expect(exportNotePdf).toHaveBeenCalledWith("alpha.md");
+    expect(exportNote).toHaveBeenCalledWith("alpha.md", "pdf");
   });
 });

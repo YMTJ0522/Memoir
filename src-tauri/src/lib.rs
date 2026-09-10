@@ -8,13 +8,15 @@ mod tray;
 mod window_frame;
 
 use commands::{
-    check_app_update, create_note, delete_attachment, delete_draft, delete_note, drafts_exist,
-    fetch_link_preview_html, get_cloud_sync_profile, get_index_info, get_note_graph,
-    import_attachment, load_app_state, migrate_legacy_state, query_library, read_draft, read_note,
-    rebuild_index, reconcile_workspace, rename_note, run_cloud_sync, save_attachment,
-    save_cloud_sync_profile, save_preferences, scan_attachments, set_favorite,
-    set_folder_appearance, skip_app_update, test_cloud_sync, write_draft, write_export_file,
-    write_note, AppServices,
+    chat_completion, chat_completion_stream, check_app_update, create_note, delete_attachment,
+    delete_draft, delete_note, drafts_exist, empty_trash, fetch_link_preview_html,
+    get_cloud_sync_profile, get_index_info, get_note_graph, get_note_version, import_attachment,
+    import_note, list_note_versions, list_trash, load_app_state, migrate_legacy_state,
+    purge_trash_item, query_library, read_draft, read_import_source, read_note, rebuild_index,
+    reconcile_workspace, rename_note, restore_trash_item, run_cloud_sync, save_ai_sessions,
+    save_attachment, save_cloud_sync_profile, save_preferences, scan_attachments, set_favorite,
+    set_folder_appearance, skip_app_update, snapshot_note_version, test_ai_connection,
+    test_cloud_sync, write_draft, write_export_file, write_note, AppServices,
 };
 use infrastructure::{app_data::AppDataRepository, filesystem::LocalFileSystem};
 use services::{AppStateService, CloudSyncService, WorkspaceService};
@@ -23,6 +25,14 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second instance was launched: focus the existing main window
+            // instead of spawning another one. This matters because two
+            // processes would fight over the same app-state.json and the
+            // frameless transparent windows visually stack on top of each
+            // other.
+            tray::show_main(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -63,6 +73,8 @@ pub fn run() {
             read_note,
             write_note,
             create_note,
+            read_import_source,
+            import_note,
             rename_note,
             delete_note,
             scan_attachments,
@@ -70,6 +82,10 @@ pub fn run() {
             save_attachment,
             import_attachment,
             delete_attachment,
+            list_trash,
+            restore_trash_item,
+            purge_trash_item,
+            empty_trash,
             load_app_state,
             check_app_update,
             skip_app_update,
@@ -79,13 +95,20 @@ pub fn run() {
             read_draft,
             write_draft,
             delete_draft,
+            list_note_versions,
+            get_note_version,
+            snapshot_note_version,
             migrate_legacy_state,
             write_export_file,
             get_cloud_sync_profile,
             save_cloud_sync_profile,
             test_cloud_sync,
             run_cloud_sync,
-            fetch_link_preview_html
+            fetch_link_preview_html,
+            chat_completion,
+            chat_completion_stream,
+            save_ai_sessions,
+            test_ai_connection
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

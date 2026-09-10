@@ -5,6 +5,11 @@ import { APP_STATE_VERSION } from "../domain/app-state";
 import { DEFAULT_WORKSPACE_LAYOUT, mergeLayout, type WorkspaceLayoutState } from "../domain/layout";
 import type { AttachmentFile, SaveAttachmentInput } from "../domain/attachments";
 import {
+  ARCHIVE_EXTENSIONS,
+  AUDIO_EXTENSIONS,
+  DOCUMENT_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   attachmentRelativePath,
   extensionFromFileName,
   extensionFromMime,
@@ -20,9 +25,22 @@ import {
 } from "../domain/folders";
 import { indexInfoFromNotes, type WorkspaceIndexInfo } from "../domain/index-info";
 import { buildNoteGraph, type NoteGraph } from "../domain/note-links";
-import type { LibraryPage, LibraryQuery, RawNoteFile, RenamedNote } from "../domain/notes";
+import type {
+  LibraryPage,
+  LibraryQuery,
+  NoteVersion,
+  NoteVersionMeta,
+  RawNoteFile,
+  RenamedNote,
+} from "../domain/notes";
 import { parseNote, queryNotesInMemory } from "../features/library/note-utils";
+import {
+  convertDocxHtml,
+  convertImportedSource,
+  importSourceExtension,
+} from "../features/import/import-article";
 import { DEFAULT_SETTINGS } from "../domain/settings";
+import type { TrashEntry } from "../domain/trash";
 import { APP_VERSION } from "../platform/app-version";
 import {
   defaultCloudSyncProfile,
@@ -32,7 +50,12 @@ import {
   type CloudSyncProgress,
 } from "../domain/cloud-sync";
 import { GatewayError } from "../domain/errors";
+import { EXPORT_FILTERS, type ExportDialogOptions } from "./contracts";
 import type {
+  AiChatCompletionInput,
+  AiChatReply,
+  AiGateway,
+  AiSessionRecord,
   AppGateways,
   CloudSyncGateway,
   CreateNoteInput,
@@ -41,6 +64,9 @@ import type {
 } from "./contracts";
 
 const DEMO_ROOT = "demo://memoir";
+const BROWSER_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
+const BROWSER_SNAPSHOT_DIFF_THRESHOLD = 400;
+const BROWSER_MAX_VERSIONS_PER_NOTE = 50;
 const DEMO_NOTES: Array<[string, string]> = [
   [
     "welcome.mdx",
@@ -134,6 +160,12 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
   private modified = new Map<string, number>(DEMO_NOTES.map(([path]) => [path, Date.now()]));
   private attachments = new Map<string, AttachmentFile>();
   private media = new Map<string, string>();
+  /** Soft-deleted notes/attachments, keyed by trash file name. */
+  private trash = new Map<string, TrashEntry>();
+  /** Original note content / attachment data URL preserved for restore. */
+  private trashContent = new Map<string, string>();
+  /** Files previously chosen for article import, keyed by name (drop re-imports). */
+  private importedArticles = new Map<string, File>();
 
   async chooseWorkspace(_title?: string) {
     return DEMO_ROOT;
@@ -152,6 +184,7 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
         title: parsed.title,
         tags: parsed.tags,
         excerpt: parsed.excerpt,
+        body: parsed.body,
       };
     });
   }
@@ -231,6 +264,55 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
     return this.noteAt(relativePath);
   }
 
+  async importArticles(root: string): Promise<RawNoteFile[]> {
+    this.assertRoot(root);
+    const files = await pickArticleFiles();
+    return this.importArticleFiles(root, files);
+  }
+
+  async importArticlesFromPaths(root: string, sourcePaths: string[]): Promise<RawNoteFile[]> {
+    this.assertRoot(root);
+    // The browser demo has no external paths; callers only hand us file names
+    // that were registered from previous imports.
+    return this.importArticleFiles(
+      root,
+      sourcePaths
+        .map((path) => this.importedArticles.get(path))
+        .filter((file): file is File => Boolean(file)),
+    );
+  }
+
+  private async importArticleFiles(root: string, files: File[]): Promise<RawNoteFile[]> {
+    this.assertRoot(root);
+    const imported: RawNoteFile[] = [];
+    for (const file of files) {
+      const extension = importSourceExtension(file.name);
+      if (!extension) continue;
+      this.importedArticles.set(file.name, file);
+      const bytesBase64 = await readFileBase64(file);
+      const text = extension === "docx" ? await convertDocxHtml(bytesBase64) : await file.text();
+      const article = convertImportedSource({ fileName: file.name, extension, text });
+      const slug = article.title
+        .trim()
+        .toLowerCase()
+        .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
+        .replace(/^-|-$/g, "") || "untitled";
+      let index = 0;
+      let relativePath = `${slug}.md`;
+      while (this.files.has(relativePath)) {
+        index += 1;
+        relativePath = `${slug}-${index}.md`;
+      }
+      this.files.set(
+        relativePath,
+        `---\ntitle: ${yamlQuote(article.title)}\ntags: []\n---\n\n${article.markdown}\n`,
+      );
+      this.modified.set(relativePath, Date.now());
+      imported.push(this.noteAt(relativePath));
+    }
+    return imported;
+  }
+
   async renameNote(root: string, oldRelativePath: string, newRelativePath: string): Promise<RenamedNote> {
     this.assertRoot(root);
     const content = this.files.get(oldRelativePath);
@@ -248,10 +330,22 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
 
   async deleteNote(root: string, relativePath: string) {
     this.assertRoot(root);
-    if (!this.files.delete(relativePath)) {
+    const content = this.files.get(relativePath);
+    if (content === undefined) {
       throw new GatewayError({ code: "not_found", message: "Demo note does not exist." });
     }
-    return `.memoir-trash/${relativePath}`;
+    const trashName = this.trashName(relativePath);
+    this.files.delete(relativePath);
+    this.trash.set(trashName, {
+      trashName,
+      originalPath: relativePath,
+      trashPath: `.memoir-trash/${trashName}`,
+      deletedAtMs: Date.now(),
+      size: new Blob([content]).size,
+      isAttachment: false,
+    });
+    this.trashContent.set(trashName, content);
+    return `.memoir-trash/${trashName}`;
   }
 
   async scanAttachments(root: string) {
@@ -312,12 +406,73 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
 
   async deleteAttachment(root: string, relativePath: string) {
     this.assertRoot(root);
-    if (!this.attachments.delete(relativePath)) {
+    const attachment = this.attachments.get(relativePath);
+    if (!attachment) {
       throw new GatewayError({ code: "not_found", message: "Demo attachment does not exist." });
     }
+    const trashName = this.trashName(relativePath);
+    this.attachments.delete(relativePath);
     this.media.delete(relativePath);
     this.media.delete(resolveWorkspaceFilePath(DEMO_ROOT, relativePath));
-    return `.memoir-trash/${relativePath}`;
+    this.trash.set(trashName, {
+      trashName,
+      originalPath: relativePath,
+      trashPath: `.memoir-trash/${trashName}`,
+      deletedAtMs: Date.now(),
+      size: attachment.size,
+      isAttachment: true,
+    });
+    this.trashContent.set(trashName, this.media.get(relativePath) ?? "");
+    return `.memoir-trash/${trashName}`;
+  }
+
+  async listTrash(root: string) {
+    this.assertRoot(root);
+    return [...this.trash.values()].sort(
+      (left, right) => right.deletedAtMs - left.deletedAtMs || left.trashName.localeCompare(right.trashName),
+    );
+  }
+
+  async restoreTrashItem(root: string, trashName: string) {
+    this.assertRoot(root);
+    const entry = this.trash.get(trashName);
+    if (!entry) {
+      throw new GatewayError({ code: "not_found", message: "Trash item does not exist." });
+    }
+    const target = entry.originalPath;
+    const content = this.trashContent.get(trashName) ?? "";
+    if (entry.isAttachment) {
+      const attachment = {
+        relativePath: target,
+        fileName: target.split("/").pop() || target,
+        extension: extensionFromFileName(target) || "png",
+        mimeType: mimeFromExtension(extensionFromFileName(target) || "png"),
+        modifiedMs: Date.now(),
+        size: entry.size,
+      };
+      this.attachments.set(target, attachment);
+      if (content) this.media.set(target, content);
+    } else {
+      this.files.set(target, content);
+      this.modified.set(target, Date.now());
+    }
+    this.trash.delete(trashName);
+    this.trashContent.delete(trashName);
+    return target;
+  }
+
+  async purgeTrashItem(root: string, trashName: string) {
+    this.assertRoot(root);
+    if (!this.trash.delete(trashName)) {
+      throw new GatewayError({ code: "not_found", message: "Trash item does not exist." });
+    }
+    this.trashContent.delete(trashName);
+  }
+
+  async emptyTrash(root: string) {
+    this.assertRoot(root);
+    this.trash.clear();
+    this.trashContent.clear();
   }
 
   async openPath() {}
@@ -355,6 +510,12 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
     return defaultPath.split(/[\\/]/).pop() || "note.pdf";
   }
 
+  async chooseExportFile({ defaultPath, format }: ExportDialogOptions) {
+    const extension = EXPORT_FILTERS[format].extensions[0];
+    const base = defaultPath.split(/[\\/]/).pop() || `note.${extension}`;
+    return base.toLowerCase().endsWith(`.${extension}`) ? base : `${base}.${extension}`;
+  }
+
   async writeExportFile(path: string, bytesBase64: string) {
     const fileName = path.split(/[\\/]/).pop() || "note.pdf";
     const binary = atob(bytesBase64);
@@ -363,6 +524,19 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
       bytes[index] = binary.charCodeAt(index);
     }
     const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+    const anchor = document.createElement("a");
+    anchor.download = fileName;
+    anchor.href = url;
+    anchor.rel = "noopener";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async writeExportText(path: string, text: string, mime: string) {
+    const fileName = path.split(/[\\/]/).pop() || "note.txt";
+    const url = URL.createObjectURL(new Blob([text], { type: mime }));
     const anchor = document.createElement("a");
     anchor.download = fileName;
     anchor.href = url;
@@ -386,7 +560,13 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
       title: parsed.title,
       tags: parsed.tags,
       excerpt: parsed.excerpt,
+      body: parsed.body,
     };
+  }
+
+  private trashName(relativePath: string) {
+    const fileName = relativePath.split("/").pop() || relativePath;
+    return `${Math.floor(Date.now() / 1000)}-${fileName}`;
   }
 
   private assertRoot(root: string) {
@@ -399,6 +579,7 @@ export class BrowserWorkspaceGateway implements WorkspaceGateway {
 export class BrowserPersistenceGateway implements PersistenceGateway {
   private state = createDefaultState();
   private drafts = new Map<string, string>();
+  private noteVersions = new Map<string, NoteVersion[]>();
 
   async loadAppState() {
     return structuredClone(this.state);
@@ -422,6 +603,10 @@ export class BrowserPersistenceGateway implements PersistenceGateway {
           : this.state.recentWorkspaces,
     };
     return structuredClone(this.state);
+  }
+
+  async saveAiSessions(sessions: AiSessionRecord[], activeAiSessionId: string | null) {
+    this.state = { ...this.state, aiSessions: sessions, activeAiSessionId };
   }
 
   async setFavorite(workspaceRoot: string, relativePath: string, favorite: boolean) {
@@ -468,6 +653,64 @@ export class BrowserPersistenceGateway implements PersistenceGateway {
     return relativePaths.filter((relativePath) =>
       this.drafts.has(`${workspaceRoot}\0${relativePath}`),
     );
+  }
+
+  async listNoteVersions(workspaceRoot: string, relativePath: string): Promise<NoteVersionMeta[]> {
+    return this.loadVersions(workspaceRoot, relativePath)
+      .slice()
+      .reverse()
+      .map(({ content: _content, ...meta }) => meta);
+  }
+
+  async getNoteVersion(
+    workspaceRoot: string,
+    relativePath: string,
+    versionId: string,
+  ): Promise<NoteVersion> {
+    const version = this.loadVersions(workspaceRoot, relativePath).find(
+      (version) => version.id === versionId,
+    );
+    if (!version) {
+      throw new GatewayError({
+        code: "not_found",
+        message: `Note version ${versionId} does not exist.`,
+      });
+    }
+    return { ...version };
+  }
+
+  async snapshotNoteVersion(
+    workspaceRoot: string,
+    relativePath: string,
+    oldContent: string,
+    newContent: string,
+    preserve = false,
+  ): Promise<void> {
+    const key = `${workspaceRoot}\0${relativePath}`;
+    const versions = this.loadVersions(workspaceRoot, relativePath);
+    const latest = versions[versions.length - 1];
+    if (latest && !preserve) {
+      const intervalElapsed =
+        Date.now() - latest.createdAt > BROWSER_SNAPSHOT_INTERVAL_MS;
+      const largeChange =
+        Math.abs(newContent.length - oldContent.length) >= BROWSER_SNAPSHOT_DIFF_THRESHOLD;
+      if (!intervalElapsed && !largeChange) return;
+    }
+    const now = Date.now();
+    const createdAt = latest ? Math.max(now, latest.createdAt + 1) : now;
+    versions.push({
+      id: `v${createdAt}-${versions.length}`,
+      title: parseNote(oldContent, "").title,
+      size: oldContent.length,
+      createdAt,
+      content: oldContent,
+    });
+    const overflow = versions.length - BROWSER_MAX_VERSIONS_PER_NOTE;
+    this.noteVersions.set(key, versions.slice(Math.max(overflow, 0)));
+  }
+
+  private loadVersions(workspaceRoot: string, relativePath: string): NoteVersion[] {
+    return this.noteVersions.get(`${workspaceRoot}\0${relativePath}`) ?? [];
   }
 
   async migrateLegacyState(_payload: LegacyStatePayload) {
@@ -520,6 +763,55 @@ export class BrowserCloudSyncGateway implements CloudSyncGateway {
   }
 }
 
+/** Browser demo: echoes a canned Markdown reply after a short delay. */
+export class BrowserAiGateway implements AiGateway {
+  async chatCompletion(input: AiChatCompletionInput): Promise<string> {
+    return this.cannedReply(input);
+  }
+
+  async chatCompletionStream(
+    input: AiChatCompletionInput,
+    _requestId: string,
+    onDelta: (piece: string) => void,
+    onReasoning: (piece: string) => void,
+  ): Promise<AiChatReply> {
+    // Simulate a reasoning trace followed by a typewriter-style content stream.
+    const reasoning = "浏览器演示模式，未连接真实 AI 服务。";
+    const content = await this.cannedReply(input);
+    for (const piece of reasoning) {
+      onReasoning(piece);
+      await new Promise((resolve) => setTimeout(resolve, 4));
+    }
+    for (const piece of content) {
+      onDelta(piece);
+      await new Promise((resolve) => setTimeout(resolve, 4));
+    }
+    return { content, reasoning };
+  }
+
+  private async cannedReply(input: AiChatCompletionInput): Promise<string> {
+    const last = [...input.messages].reverse().find((message) => message.role === "user");
+    const prompt = last?.content ?? "";
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    return [
+      "> 浏览器演示模式，未连接真实 AI 服务。",
+      "",
+      "您刚才的问题是：",
+      "",
+      `> ${prompt.split("\n").join("\n> ")}`,
+      "",
+      "在桌面版 Memoir 中，设置页配置 AI 模型后即可获得真实回复。",
+    ].join("\n");
+  }
+
+  async testConnection(): Promise<string> {
+    throw new GatewayError({
+      code: "io",
+      message: "AI 连接测试仅在桌面版可用。",
+    });
+  }
+}
+
 function blobToBase64(file: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -537,7 +829,13 @@ function pickBrowserFiles() {
   return new Promise<File[]>((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*";
+    input.accept = [
+      ...IMAGE_EXTENSIONS.map((extension) => `.${extension}`),
+      ...VIDEO_EXTENSIONS.map((extension) => `.${extension}`),
+      ...AUDIO_EXTENSIONS.map((extension) => `.${extension}`),
+      ...DOCUMENT_EXTENSIONS.map((extension) => `.${extension}`),
+      ...ARCHIVE_EXTENSIONS.map((extension) => `.${extension}`),
+    ].join(",");
     input.multiple = true;
     input.hidden = true;
     const finish = (files: File[]) => {
@@ -550,10 +848,40 @@ function pickBrowserFiles() {
   });
 }
 
+function pickArticleFiles() {
+  return new Promise<File[]>((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".txt,.md,.markdown,.html,.htm,.docx";
+    input.multiple = true;
+    input.hidden = true;
+    const finish = (files: File[]) => {
+      input.remove();
+      resolve(files);
+    };
+    input.addEventListener("change", () => finish(Array.from(input.files ?? [])), { once: true });
+    document.body.append(input);
+    input.click();
+  });
+}
+
+function readFileBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 export function createBrowserGateways(): AppGateways {
   return {
     workspace: new BrowserWorkspaceGateway(),
     persistence: new BrowserPersistenceGateway(),
     cloudSync: new BrowserCloudSyncGateway(),
+    ai: new BrowserAiGateway(),
   };
 }

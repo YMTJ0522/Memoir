@@ -9,6 +9,10 @@ export type RawNoteFile = {
   title: string;
   tags: string[];
   excerpt: string;
+  /** Full parsed body (frontmatter stripped) — present on fresh Rust payloads. */
+  body?: string;
+  /** Match-context snippet produced by full-text search; empty when not searching. */
+  snippet?: string;
 };
 
 export type NoteMeta = RawNoteFile & {
@@ -121,3 +125,18 @@ export function addUniqueTags(current: string[], incoming: string[]) {
   }
   return next;
 }
+
+export type NoteVersion = {
+  id: string;
+  title: string;
+  size: number;
+  createdAt: number;
+  content: string;
+};
+
+export type NoteVersionMeta = {
+  id: string;
+  title: string;
+  size: number;
+  createdAt: number;
+};

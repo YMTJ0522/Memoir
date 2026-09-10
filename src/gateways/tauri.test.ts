@@ -142,6 +142,51 @@ describe("Tauri gateways", () => {
     });
   });
 
+  it("reads and imports article sources through the new commands", async () => {
+    const { TauriWorkspaceGateway } = await import("./tauri");
+    invoke
+      .mockResolvedValueOnce({
+        fileName: "ideas.txt",
+        extension: "txt",
+        text: "1. First\n2. Second",
+        bytesBase64: "",
+      })
+      .mockResolvedValueOnce({
+        relativePath: "ideas.md",
+        fileName: "ideas.md",
+        extension: "md",
+        modifiedMs: 1,
+        size: 20,
+        title: "ideas",
+        tags: [],
+        excerpt: "",
+      });
+    const gateway = new TauriWorkspaceGateway();
+    const imported = await gateway.importArticlesFromPaths("/notes", ["/tmp/ideas.txt"]);
+    expect(invoke).toHaveBeenCalledWith("read_import_source", { sourcePath: "/tmp/ideas.txt" });
+    expect(invoke).toHaveBeenCalledWith("import_note", {
+      root: "/notes",
+      title: "ideas",
+      markdown: "1\\. First\n2\\. Second",
+    });
+    expect(imported).toHaveLength(1);
+    expect(imported[0]!.relativePath).toBe("ideas.md");
+  });
+
+  it("skips unsupported article extensions", async () => {
+    const { TauriWorkspaceGateway } = await import("./tauri");
+    invoke.mockResolvedValue({
+      fileName: "notes.pdf",
+      extension: "pdf",
+      text: "",
+      bytesBase64: "",
+    });
+    const gateway = new TauriWorkspaceGateway();
+    const imported = await gateway.importArticlesFromPaths("/notes", ["/tmp/notes.pdf"]);
+    expect(imported).toEqual([]);
+    expect(invoke).not.toHaveBeenCalledWith("import_note", expect.anything());
+  });
+
   it("saves attachments with camelCase DTOs", async () => {
     const { TauriWorkspaceGateway } = await import("./tauri");
     invoke.mockResolvedValue({
