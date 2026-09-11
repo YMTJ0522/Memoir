@@ -467,6 +467,22 @@ pub struct AiMessageRecord {
     pub content: String,
     #[serde(default)]
     pub reasoning: Option<String>,
+    /// Agent-loop steps the model executed before the final text reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Vec<AiToolStepRecord>>,
+}
+
+/// One executed tool step inside an AI chat message (persisted for history).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiToolStepRecord {
+    /// Tool name as invoked by the model.
+    pub tool: String,
+    /// Raw JSON arguments string.
+    pub args: String,
+    /// Short human-readable result summary (may be long for note bodies).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
 fn default_version() -> u32 {

@@ -51,6 +51,8 @@ export default function FlowchartView({ className }: { className?: string }) {
   const activePath = useAppStore((state) => state.activePath);
   const content = useAppStore((state) => state.content);
   const notes = useAppStore((state) => state.notes);
+  const libraryPanelMode = useAppStore((state) => state.libraryPanelMode);
+  const setLibraryPanelMode = useAppStore((state) => state.setLibraryPanelMode);
   const { t } = useI18n();
 
   const activeNote = notes.find((note) => note.relativePath === activePath) || null;
@@ -58,6 +60,16 @@ export default function FlowchartView({ className }: { className?: string }) {
     () => (activePath ? extractMermaidBlocks(content) : []),
     [activePath, content],
   );
+
+  // The sidebar hides the flowchart entry for notes without mermaid blocks.
+  // If the user is already inside the flowchart view and switches to a note
+  // without diagrams, fall back to the notes list instead of showing an
+  // orphaned empty diagram canvas.
+  useEffect(() => {
+    if (libraryPanelMode === "flowchart" && activePath && blocks.length === 0) {
+      setLibraryPanelMode("notes");
+    }
+  }, [libraryPanelMode, activePath, blocks.length, setLibraryPanelMode]);
 
   const [selected, setSelected] = useState(0);
   const [svg, setSvg] = useState("");

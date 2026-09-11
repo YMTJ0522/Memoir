@@ -77,6 +77,7 @@ function themeColors() {
     accentContrast: read("--memoir-accent-contrast", "#ffffff"),
     border: read("--memoir-border", "#e7e3db"),
     elevated: read("--memoir-elevated", "#fffefb"),
+    muted: read("--memoir-muted", "#8c8982"),
     dark: typeof document !== "undefined" && document.documentElement.dataset.theme === "dark",
   };
 }
@@ -128,10 +129,12 @@ const hostRef = useRef<SVGSVGElement>(null);
         maxWidth: 280,
         paddingX: 14,
         spacingVertical: 6,
-        color: () =>
-          themeColors().dark
-            ? "color-mix(in srgb, var(--memoir-text) 45%, var(--memoir-muted))"
-            : "var(--memoir-accent)",
+        color: () => {
+            const tc = themeColors();
+            return tc.dark
+              ? `color-mix(in srgb, ${tc.accent} 65%, ${tc.muted})`
+              : tc.accent;
+          },
         lineWidth: () => 1.5,
       });
       markmapRef.current = mm;
@@ -164,10 +167,12 @@ const hostRef = useRef<SVGSVGElement>(null);
     const mm = markmapRef.current;
     if (!mm) return;
     mm.setOptions({
-      color: () =>
-        themeColors().dark
-          ? "color-mix(in srgb, var(--memoir-text) 45%, var(--memoir-muted))"
-          : "var(--memoir-accent)",
+      color: () => {
+        const tc = themeColors();
+        return tc.dark
+          ? `color-mix(in srgb, ${tc.accent} 65%, ${tc.muted})`
+          : tc.accent;
+      },
     });
     mm.updateStyle();
   }, [appearance]);

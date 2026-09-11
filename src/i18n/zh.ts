@@ -561,6 +561,12 @@ export const zh = {
   "ai.quickTranslate": "翻译",
   "ai.quickTags": "生成标签",
   "ai.quickPolish": "润色",
+  "ai.toolStepsLabel": "工具调用",
+  "ai.toolStep.search_notes": "搜索笔记",
+  "ai.toolStep.read_note": "读取笔记",
+  "ai.toolStep.note_outline": "提取大纲",
+  "ai.toolStep.list_tags": "列出标签",
+  "ai.toolStep.create_note": "创建笔记",
 
   "sync.title": "云同步",
   "sync.tabStatus": "同步",

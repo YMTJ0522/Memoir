@@ -641,11 +641,10 @@ pub async fn test_ai_connection(
     tauri::async_runtime::spawn_blocking(move || {
         ai_client::validate_config(&ai)?;
         let probe = ai_client::AiChatCompletionInput {
-            messages: vec![ai_client::AiChatMessage {
-                role: "user".into(),
-                content: "ping".into(),
-            }],
+            messages: vec![ai_client::AiChatMessage::plain("user", "ping")],
             temperature: None,
+            tools: None,
+            tool_choice: None,
         };
         ai_client::chat_completion(&ai, &probe)
     })

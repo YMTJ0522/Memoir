@@ -254,12 +254,22 @@ export function LibrarySidebar({
   const setSettings = useAppStore((state) => state.setSettings);
   const settings = useAppStore((state) => state.settings);
   const openSettings = useAppStore((state) => state.openSettings);
+  const activePath = useAppStore((state) => state.activePath);
+  const content = useAppStore((state) => state.content);
   const { t, locale } = useI18n();
   const compareLocale = dateLocale(locale);
   const folderTree = useMemo(
     () => buildFolderTree(libraryStats.folders, compareLocale),
     [compareLocale, libraryStats.folders],
   );
+
+  /** Only show the flowchart nav button when the active note contains at
+   *  least one ```mermaid code block. This avoids cluttering the sidebar
+   *  with an entry that leads to an empty view for notes without diagrams. */
+  const hasMermaid = useMemo(() => {
+    if (!activePath) return false;
+    return /\n[ \t]*(```|~~~)[ \t]*mermaid\b/i.test(content);
+  }, [activePath, content]);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const tags = [...libraryStats.tags].sort((left, right) =>
     left.tag.localeCompare(right.tag, compareLocale),
@@ -397,13 +407,15 @@ export function LibrarySidebar({
             label={t("nav.mindmap")}
             onClick={() => setLibraryPanelMode("mindmap")}
           />
-          <NavButton
-            active={libraryPanelMode === "flowchart"}
-            collapsed={collapsed}
-            icon={<GitBranch strokeWidth={1.8} />}
-            label={t("nav.flowchart")}
-            onClick={() => setLibraryPanelMode("flowchart")}
-          />
+          {hasMermaid && (
+            <NavButton
+              active={libraryPanelMode === "flowchart"}
+              collapsed={collapsed}
+              icon={<GitBranch strokeWidth={1.8} />}
+              label={t("nav.flowchart")}
+              onClick={() => setLibraryPanelMode("flowchart")}
+            />
+          )}
           <NavButton
             active={libraryPanelMode === "attachments"}
             collapsed={collapsed}

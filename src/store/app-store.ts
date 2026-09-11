@@ -323,6 +323,13 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
                 role: message.role,
                 content: message.content,
                 reasoning: message.reasoning ?? null,
+                steps: message.steps?.length
+                  ? message.steps.map((step) => ({
+                      tool: step.tool,
+                      args: step.args,
+                      result: step.result ?? null,
+                    }))
+                  : null,
               })),
             })),
             state.activeAiSessionId,
@@ -487,6 +494,11 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
                   role: message.role,
                   content: message.content,
                   reasoning: message.reasoning ?? undefined,
+                  steps: (message.steps ?? undefined)?.map((step) => ({
+                    tool: step.tool,
+                    args: step.args,
+                    result: step.result ?? undefined,
+                  })),
                 };
                 return [narrowed];
               }),

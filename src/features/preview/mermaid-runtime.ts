@@ -9,19 +9,67 @@ let mermaidInitialized = false;
 let mermaidTheme: string | null = null;
 let idSeq = 0;
 
-/** Detect the active Memoir theme so mermaid diagrams match the surrounding
- * canvas. Mermaid only initialises once, so when the theme changes between
- * renders we must re-initialise (and the cache key includes the theme to
- * avoid serving a stale light SVG in dark mode, or vice versa). */
-function currentMermaidTheme(): "dark" | "neutral" {
-  if (typeof document !== "undefined" && document.documentElement.dataset.theme === "dark") {
-    return "dark";
-  }
-  return "neutral";
+/** Resolve whether the app is currently in dark mode (mermaid theme name). */
+function currentMermaidTheme(): "dark" | "default" {
+  return readVar("--memoir-appearance", "light").trim() === "dark" ? "dark" : "default";
+}
+
+/** Read a CSS custom property from :root, with a fallback. */
+function readVar(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+/** Build a complete set of mermaid themeVariables that matches the current
+ *  Memoir theme (light or dark) and follows the user's accent colour.
+ *
+ *  Both light and dark branches produce the SAME structural parameters
+ *  (fontSize, fontFamily, etc.) so the generated SVG has identical metrics
+ *  across theme switches — only colours change, preventing the layout
+ *  jitter that occurred when light used mermaid's `neutral` defaults and
+ *  dark used a fully-overridden `dark` theme. */
+function memoirThemeVariables(): Record<string, string> {
+  const dark = currentMermaidTheme() === "dark";
+  const accent = readVar("--memoir-accent", dark ? "#efede7" : "#343532");
+  const accentSoft = readVar("--memoir-accent-soft", dark ? "#393832" : "#e7e5df");
+  const text = readVar("--memoir-text", dark ? "#f0eee8" : "#292a27");
+  const muted = readVar("--memoir-muted", dark ? "#a5a198" : "#8c8982");
+  const elevated = readVar("--memoir-elevated", dark ? "#24241f" : "#fffefb");
+  const panel = readVar("--memoir-panel", dark ? "#1d1d1a" : "#f5f3ee");
+  const border = readVar("--memoir-border", dark ? "#37362f" : "#e7e3db");
+
+  return {
+    fontSize: "14px",
+    background: elevated,
+    primaryColor: accentSoft,
+    primaryTextColor: text,
+    primaryBorderColor: accent,
+    lineColor: muted,
+    secondaryColor: panel,
+    tertiaryColor: border,
+    textColor: text,
+    // Mermaid also reads these for sequencediagram / class diagram / etc.
+    nodeBkg: accentSoft,
+    nodeBorder: accent,
+    clusterBkg: panel,
+    clusterBorder: border,
+    titleColor: text,
+    edgeLabelBackground: elevated,
+    labelBoxBkgColor: accentSoft,
+    // DeepSeek-style accent fill for active nodes
+    activeTaskBorderColor: accent,
+    doneTaskBorderColor: accent,
+    critBorderColor: "#c94c41",
+  };
+}
+
+function themeSignature(): string {
+  return `${currentMermaidTheme()}::${readVar("--memoir-accent", "")}::${readVar("--memoir-accent-soft", "")}`;
 }
 
 function cacheKey(code: string) {
-  return `${currentMermaidTheme()}::${code}`;
+  return `${themeSignature()}::${code}`;
 }
 
 export function getCachedMermaidSvg(code: string) {
@@ -47,32 +95,16 @@ export async function renderMermaidDiagram(code: string) {
   const request = (async () => {
     const { default: mermaid } = await import("mermaid");
     const theme = currentMermaidTheme();
-    if (!mermaidInitialized || mermaidTheme !== theme) {
+    const sig = themeSignature();
+    if (!mermaidInitialized || mermaidTheme !== sig) {
       mermaid.initialize({
         startOnLoad: false,
         theme,
         securityLevel: "strict",
-        themeVariables:
-          theme === "dark"
-            ? {
-                // Match Memoir's dark palette so diagrams blend with the
-                // surrounding canvas instead of using mermaid's defaults
-                // (which have white node fills with dark text — fine on
-                // white, unreadable on a dark background).
-                background: "#24241f",
-                primaryColor: "#2d2d28",
-                primaryTextColor: "#f0eee8",
-                primaryBorderColor: "#4a4942",
-                lineColor: "#a5a198",
-                secondaryColor: "#3a3a34",
-                tertiaryColor: "#1d1d1a",
-                textColor: "#f0eee8",
-                fontSize: "14px",
-              }
-            : undefined,
+        themeVariables: memoirThemeVariables(),
       });
       mermaidInitialized = true;
-      mermaidTheme = theme;
+      mermaidTheme = sig;
     }
     idSeq += 1;
     const result = await mermaid.render(`memoir-mmd-${idSeq}`, code);

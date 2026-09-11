@@ -1012,13 +1012,12 @@
   color: #222222;
 }
 
-/* Mermaid dark-mode edge labels: the default grey background (#585858)
- * sits too close to the dark canvas, making branch labels ("是"/"否")
- * blend into the background. Using the same dark fill as nodes keeps the
- * diagram palette consistent and the labels legible. */
-[data-theme="dark"] .memoir-preview .edgeLabel,
-[data-theme="dark"] .memoir-preview .edgeLabel span,
-[data-theme="dark"] .memoir-preview .labelBkg {
-  background-color: #2d2d28 !important;
-  color: #f0eee8 !important;
+/* Mermaid edge labels: themeVariables now sets edgeLabelBackground in both
+ * light and dark, so the previous dark-only !important override is no longer
+ * needed. Keeping a light touch to ensure label text stays readable. */
+.memoir-preview .edgeLabel,
+.memoir-preview .edgeLabel span,
+.memoir-preview .labelBkg {
+  background-color: var(--memoir-elevated);
+  color: var(--memoir-text);
 }

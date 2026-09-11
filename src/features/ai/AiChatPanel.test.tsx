@@ -88,11 +88,11 @@ describe("AiChatPanel", () => {
     });
     expect(gateways.ai.chatCalls).toHaveLength(1);
     const payload = gateways.ai.chatCalls[0].messages;
+    // agent-runner merges note context into the single system message
     expect(payload[0].role).toBe("system");
     expect(payload[0].content).toContain("AI 写作助手");
-    expect(payload[1].role).toBe("system");
-    expect(payload[1].content).toContain("当前笔记标题：One");
-    expect(payload[1].content).toContain("# One");
+    expect(payload[0].content).toContain("当前笔记标题：One");
+    expect(payload[0].content).toContain("# One");
     expect(payload.at(-1)).toEqual({ role: "user", content: "帮我总结这篇笔记" });
   });
 
@@ -435,6 +435,36 @@ describe("AiChatPanel", () => {
     // 再次点击收起
     await userEvent.click(view.getByRole("button", { name: "思考过程" }));
     expect(view.queryByText("第一步思考")).not.toBeInTheDocument();
+  });
+
+  it("renders executed agent tool steps under the assistant reply", async () => {
+    const gateways = createMockGateways();
+    gateways.ai.toolCallResponses = [
+      [{ id: "call_1", type: "function", function: { name: "search_notes", arguments: '{"query":"预算"}' } }],
+    ];
+    gateways.ai.chatResponses = ["工具轮中间文本", "根据搜索结果整理的最终回答"];
+    setGatewaysForTests(gateways);
+    useAppStore.setState({
+      workspaceRoot: "/workspace",
+      activePath: "one.md",
+      libraryPanelMode: "ai",
+      settings: configuredAi,
+      notes: [note("one.md", "One")],
+      content: "",
+    });
+    const view = render(<AiChatPanel />);
+    await userEvent.type(view.getByRole("textbox"), "查一下预算笔记");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(view.getByText(/根据搜索结果整理的最终回答/)).toBeInTheDocument();
+    });
+    // 步骤条显示工具名与参数
+    expect(view.getByText("搜索笔记")).toBeInTheDocument();
+    expect(view.getByText('{"query":"预算"}')).toBeInTheDocument();
+    // 第二轮请求携带了 tool 消息
+    const lastCall = gateways.ai.chatCalls.at(-1);
+    expect(lastCall?.messages.some((m) => m.role === "tool")).toBe(true);
   });
 
   it("renders quick command chips and sends the preset prompt", async () => {

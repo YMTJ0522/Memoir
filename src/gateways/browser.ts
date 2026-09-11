@@ -786,7 +786,7 @@ export class BrowserAiGateway implements AiGateway {
       onDelta(piece);
       await new Promise((resolve) => setTimeout(resolve, 4));
     }
-    return { content, reasoning };
+    return { content, reasoning, toolCalls: [] };
   }
 
   private async cannedReply(input: AiChatCompletionInput): Promise<string> {

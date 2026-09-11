@@ -42,6 +42,7 @@ import type {
   AiChatReply,
   AiGateway,
   AiSessionRecord,
+  AiToolCall,
   AppGateways,
   CloudSyncGateway,
   CreateNoteInput,
@@ -662,6 +663,11 @@ export class MockAiGateway implements AiGateway {
     "这是来自 MockAiGateway 的模拟回复。",
     "第二条模拟回复，用于连续对话测试。",
   ];
+  /**
+   * Optional canned tool-call replies. When set, each streaming call pops one
+   * and returns it as `toolCalls` (the runner executes them and asks again).
+   */
+  toolCallResponses: AiToolCall[][] = [];
   chatCalls: Array<AiChatCompletionInput> = [];
   failChat = false;
   chatError = new GatewayError({ code: "io", message: "模拟 AI 请求失败。" });
@@ -694,6 +700,7 @@ export class MockAiGateway implements AiGateway {
     if (this.failChat) throw this.chatError;
     const next = this.chatResponses.shift();
     const content = next ?? `模拟回复 #${this.chatCalls.length}`;
+    const toolCalls = this.toolCallResponses.shift() ?? [];
     for (const piece of this.streamReasoning) {
       onReasoning(piece);
       await new Promise((resolve) => setTimeout(resolve, this.streamChunkDelayMs));
@@ -702,7 +709,7 @@ export class MockAiGateway implements AiGateway {
       onDelta(piece);
       await new Promise((resolve) => setTimeout(resolve, this.streamChunkDelayMs));
     }
-    return { content, reasoning: this.streamReasoning.join("") };
+    return { content, reasoning: this.streamReasoning.join(""), toolCalls };
   }
 
   async testConnection(): Promise<string> {

@@ -564,6 +564,12 @@ export const en = {
   "ai.quickTranslate": "Translate",
   "ai.quickTags": "Suggest tags",
   "ai.quickPolish": "Polish",
+  "ai.toolStepsLabel": "Tool calls",
+  "ai.toolStep.search_notes": "Search notes",
+  "ai.toolStep.read_note": "Read note",
+  "ai.toolStep.note_outline": "Extract outline",
+  "ai.toolStep.list_tags": "List tags",
+  "ai.toolStep.create_note": "Create note",
 
   "sync.title": "Cloud sync",
   "sync.tabStatus": "Sync",

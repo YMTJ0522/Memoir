@@ -52,6 +52,12 @@ export type LibraryPanelMode =
   | "ai"
   | "trash";
 
+export type AiToolStep = {
+  tool: string;
+  args: string;
+  result?: string;
+};
+
 export type AiChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -60,6 +66,8 @@ export type AiChatMessage = {
   error?: string;
   /** Thinking trace emitted by reasoning models (DeepSeek-R1 / Doubao thinking). */
   reasoning?: string;
+  /** Agent-loop tool steps executed before the final text reply. */
+  steps?: AiToolStep[];
 };
 
 export type AiSession = {

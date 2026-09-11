@@ -105,6 +105,15 @@ export type AiMessageRecord = {
   role: string;
   content: string;
   reasoning?: string | null;
+  /** Agent-loop steps executed before the final reply (for history). */
+  steps?: AiToolStepRecord[] | null;
+};
+
+/** One executed agent tool step, persisted for chat history. */
+export type AiToolStepRecord = {
+  tool: string;
+  args: string;
+  result?: string | null;
 };
 
 /** One persisted AI chat session (used by saveAiSessions). */
@@ -160,22 +169,55 @@ export interface CloudSyncGateway {
   watchProgress(onProgress: (progress: CloudSyncProgress) => void): Promise<() => void>;
 }
 
+/** One tool call requested by the model during an agent loop. */
+export type AiToolCall = {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    /** Raw JSON arguments string; the runner parses it. */
+    arguments: string;
+  };
+};
+
+/** An OpenAI function-tool definition (JSON schema) sent with the request. */
+export type AiToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
 /** One OpenAI-compatible chat message. */
 export type AiChatMessage = {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** Assistant-only: tool calls the model requested. */
+  toolCalls?: AiToolCall[];
+  /** Tool-role only: which call this result answers. */
+  toolCallId?: string;
+  /** Tool-role only: display name of the executed tool. */
+  name?: string;
 };
 
 /** Payload for an OpenAI-compatible chat completion request. */
 export type AiChatCompletionInput = {
   messages: AiChatMessage[];
   temperature?: number;
+  /** Optional tool definitions enabling agent loops. */
+  tools?: AiToolDefinition[];
+  /** "auto" | "none" | a named function. */
+  toolChoice?: string;
 };
 
 /** Final combined reply of a streaming chat completion. */
 export type AiChatReply = {
   content: string;
   reasoning: string;
+  /** Tool calls the model requested instead of a final text reply. */
+  toolCalls: AiToolCall[];
 };
 
 export interface AiGateway {

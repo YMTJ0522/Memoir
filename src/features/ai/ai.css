@@ -250,6 +250,71 @@
   background: var(--memoir-canvas);
 }
 
+/* agent tool steps */
+
+.ai-tool-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.ai-tool-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 1px solid var(--memoir-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--memoir-panel) 72%, transparent);
+}
+
+.ai-tool-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  border-radius: 5px;
+  color: var(--memoir-accent);
+  background: color-mix(in srgb, var(--memoir-accent) 14%, transparent);
+}
+
+.ai-tool-step-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.ai-tool-step-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--memoir-text);
+  word-break: break-word;
+}
+
+.ai-tool-step-args {
+  margin: 2px 0 0;
+  font-family: var(--memoir-mono-font);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--memoir-muted);
+}
+
+.ai-tool-step-result {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--memoir-muted);
+  border-left: 2px solid color-mix(in srgb, var(--memoir-accent) 45%, transparent);
+  padding-left: 6px;
+}
+
 /* quick command chips */
 
 .ai-quick-commands {

@@ -17,10 +17,10 @@ import {
   Trash2,
   TriangleAlert,
   WandSparkles,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getGateways } from "../../gateways";
 import { useI18n } from "../../i18n/react";
 import type { MessageKey } from "../../i18n/translate";
 import { isAiConfigured } from "../../domain/settings";
@@ -29,6 +29,7 @@ import { handleWindowDragMouseDown } from "../window/window-drag";
 import { useAppStore } from "../../store/app-store";
 import type { AiChatMessage, AiSession } from "../../store/types";
 import { renderMarkdownLite } from "./markdown-lite";
+import { runAgentLoop, type AgentRunStep } from "./agent-runner";
 import { Button, IconButton, Select, Toggle, cn } from "../../components/ui";
 
 const MAX_NOTE_CONTEXT_CHARS = 30_000;
@@ -200,32 +201,35 @@ export default function AiChatPanel({ className }: { className?: string }) {
     setIsSending(true);
     streamingSessionRef.current = sessionId;
     const messageId = loadingMessage.id;
+    const executedSteps: AgentRunStep[] = [];
     try {
       const noteContext =
         useNoteContext && activeNote
           ? buildNoteContext(activeNote.title || activeNote.fileName, content)
           : null;
-      const payload: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-        { role: "system", content: SYSTEM_ROLE },
-      ];
-      if (noteContext) {
-        payload.push({ role: "system", content: noteContext });
-      }
-      for (const message of history) {
-        payload.push({ role: message.role, content: message.content });
-      }
-      const reply = await getGateways().ai.chatCompletionStream(
-        { messages: payload },
-        `req-${sessionId}-${messageId}`,
-        (piece) => {
-          if (streamingSessionRef.current !== sessionId) return;
-          appendStreamPiece(sessionId, messageId, piece, "content");
+      const historyMessages = history.map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
+      const result = await runAgentLoop({
+        history: historyMessages,
+        userMessage: trimmed,
+        systemPrompt: SYSTEM_ROLE,
+        noteContext,
+        callbacks: {
+          onDelta: (piece) => {
+            if (streamingSessionRef.current !== sessionId) return;
+            appendStreamPiece(sessionId, messageId, piece, "content");
+          },
+          onReasoning: (piece) => {
+            if (streamingSessionRef.current !== sessionId) return;
+            appendStreamPiece(sessionId, messageId, piece, "reasoning");
+          },
+          onStep: (step) => {
+            executedSteps.push(step);
+          },
         },
-        (piece) => {
-          if (streamingSessionRef.current !== sessionId) return;
-          appendStreamPiece(sessionId, messageId, piece, "reasoning");
-        },
-      );
+      });
       // Finalize with the authoritative combined reply (covers non-stream fallback).
       const current = useAppStore.getState();
       const targetSession = current.aiSessions.find((item) => item.id === sessionId);
@@ -235,8 +239,9 @@ export default function AiChatPanel({ className }: { className?: string }) {
             item.id === messageId
               ? {
                   ...item,
-                  content: reply.content || item.content,
-                  reasoning: reply.reasoning || item.reasoning,
+                  content: result.reply.content || item.content,
+                  reasoning: result.reply.reasoning || item.reasoning,
+                  steps: executedSteps.length ? executedSteps : undefined,
                   status: undefined,
                 }
               : item,
@@ -549,6 +554,24 @@ export default function AiChatPanel({ className }: { className?: string }) {
                                 )}
                               </div>
                             ) : null}
+                            {message.steps && message.steps.length > 0 && (
+                              <div className="ai-tool-steps">
+                                {message.steps.map((step, index) => (
+                                  <div className="ai-tool-step" key={`${message.id}-step-${index}`}>
+                                    <span className="ai-tool-step-icon">
+                                      <Wrench className="h-3 w-3" aria-hidden />
+                                    </span>
+                                    <div className="ai-tool-step-body">
+                                      <p className="ai-tool-step-name">{toolStepLabel(step.tool)}</p>
+                                      <pre className="ai-tool-step-args">{step.args}</pre>
+                                      {step.result && (
+                                        <p className="ai-tool-step-result">{step.result}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             <div
                               className="ai-markdown"
                               dangerouslySetInnerHTML={{
@@ -688,5 +711,23 @@ function QuickIcon({ kind }: { kind: QuickCommandIcon }) {
       return <WandSparkles className="h-3.5 w-3.5" aria-hidden />;
     default:
       return <Sparkles className="h-3.5 w-3.5" aria-hidden />;
+  }
+}
+
+/** Friendly Chinese label for an executed agent tool. */
+function toolStepLabel(tool: string): string {
+  switch (tool) {
+    case "search_notes":
+      return "搜索笔记";
+    case "read_note":
+      return "读取笔记";
+    case "note_outline":
+      return "提取大纲";
+    case "list_tags":
+      return "列出标签";
+    case "create_note":
+      return "创建笔记";
+    default:
+      return tool;
   }
 }
