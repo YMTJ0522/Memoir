@@ -11,6 +11,7 @@ import {
   Sparkles,
   Star,
   Upload,
+  Waypoints,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -118,15 +119,17 @@ export function NoteList({
           data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
           onMouseDown={handleWindowDragMouseDown}
         >
-          {mode === "index" || mode === "attachments" || mode === "graph" || mode === "trash" ? (
+          {mode === "index" || mode === "attachments" || mode === "graph" || mode === "mindmap" || mode === "trash" ? (
             <h2 className="text-[13px] font-semibold tracking-[-0.02em] text-text">
               {mode === "attachments"
                 ? t("library.attachments")
                 : mode === "graph"
                   ? t("library.graph")
-                  : mode === "trash"
-                    ? t("library.trash")
-                    : t("library.index")}
+                  : mode === "mindmap"
+                    ? t("library.mindmap")
+                    : mode === "trash"
+                      ? t("library.trash")
+                      : t("library.index")}
             </h2>
           ) : mode === "ai" ? (
             <h2 className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.02em] text-text">
@@ -165,7 +168,7 @@ export function NoteList({
             <IconButton label={t("library.importAttachment")} onClick={() => void importAttachments()}>
               <Upload className="h-4 w-4" />
             </IconButton>
-          ) : mode === "index" || mode === "graph" || mode === "trash" || mode === "ai" ? (
+          ) : mode === "index" || mode === "graph" || mode === "mindmap" || mode === "trash" || mode === "ai" ? (
             <span aria-hidden className="h-8 w-8" />
           ) : mode === "notes" ? (
             <div className="flex items-center gap-1.5">
@@ -195,6 +198,8 @@ export function NoteList({
         <IndexInspector />
       ) : mode === "graph" ? (
         <NoteGraphPanel />
+      ) : mode === "mindmap" ? (
+        <MindMapPanel />
       ) : mode === "sync" ? (
         <CloudSyncPanel />
       ) : mode === "trash" ? (
@@ -298,6 +303,71 @@ export function NoteList({
         target={menuTarget}
       />
     </section>
+  );
+}
+
+function MindMapPanel() {
+  const notes = useAppStore((state) => state.notes);
+  const activePath = useAppStore((state) => state.activePath);
+  const selectNote = useAppStore((state) => state.selectNote);
+  const { t } = useI18n();
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      notes.filter((note) => {
+        if (!needle) return true;
+        return (
+          note.title.toLowerCase().includes(needle) ||
+          note.relativePath.toLowerCase().includes(needle)
+        );
+      }),
+    [needle, notes],
+  );
+  return (
+    <div className="memoir-panel-in flex min-h-0 flex-1 flex-col">
+      <label className="note-search relative mx-3 mt-2.5 block">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+        <Input
+          aria-label={t("library.mindmapSearch")}
+          className="h-8 rounded-[10px] pl-8 shadow-none"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("library.mindmapSearchPlaceholder")}
+          type="search"
+          value={query}
+        />
+      </label>
+      <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-3 pt-2">
+        {!filtered.length ? (
+          <p className="px-2 py-8 text-center text-xs text-muted">
+            {notes.length ? t("library.mindmapNoMatches") : t("library.mindmapEmpty")}
+          </p>
+        ) : (
+          filtered.map((note) => {
+            const active = activePath === note.relativePath;
+            return (
+              <button
+                className={cn(
+                  "mindmap-note-row grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2.5 text-left",
+                  active && "is-active",
+                )}
+                key={note.relativePath}
+                onClick={() => void selectNote(note.relativePath)}
+                type="button"
+              >
+                <Waypoints className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />
+                <span className="min-w-0">
+                  <span className="block truncate text-[12px] font-medium text-text">
+                    {note.title || note.fileName}
+                  </span>
+                  <span className="block truncate text-[10px] text-muted">{note.relativePath}</span>
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1210,7 +1210,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         void runLibraryQuery();
       },
       setLibraryPanelMode(libraryPanelMode) {
-        const isMainArea = libraryPanelMode === "graph";
+        const isMainArea = libraryPanelMode === "graph" || libraryPanelMode === "mindmap";
         set({
           libraryPanelMode,
           mobilePanel: isMainArea ? "editor" : "library",

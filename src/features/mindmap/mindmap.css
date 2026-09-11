@@ -1,0 +1,25 @@
+/* Mind map stage: the markmap svg fills the stage and is centered when short. */
+.mindmap-stage .markmap {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.mindmap-stage svg.markmap {
+  outline: none;
+}
+
+/* Keep foreignObject text readable in dark mode (markmap defaults to dark text). */
+.mindmap-stage .markmap-foreign {
+  display: inline-block;
+}
+.mindmap-stage .markmap-foreign > div {
+  font: var(--memoir-body-size) / var(--memoir-line-height) var(--memoir-font-family);
+}
+.mindmap-stage .markmap-foreign p {
+  margin: 0;
+}
+
+/* Match node content color to the theme instead of markmap's hardcoded #333. */
+.mindmap-stage .markmap-node > foreignObject .markmap-foreign > div {
+  color: var(--memoir-text);
+}

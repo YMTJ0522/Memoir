@@ -47,6 +47,7 @@ export type LibraryPanelMode =
   | "index"
   | "sync"
   | "graph"
+  | "mindmap"
   | "ai"
   | "trash";
 

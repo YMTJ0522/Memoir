@@ -66,6 +66,14 @@
   gap: 8px;
 }
 
+.ai-no-note-hint {
+  color: var(--memoir-muted);
+  border: 1px dashed var(--memoir-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--memoir-elevated) 60%, transparent);
+}
+
 .ai-quick-tile {
   display: inline-flex;
   align-items: center;

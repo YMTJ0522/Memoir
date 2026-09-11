@@ -19,6 +19,7 @@ import {
   Sun,
   Tag as TagIcon,
   Trash2,
+  Waypoints,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { IconButton, cn } from "../../components/ui";
@@ -387,6 +388,13 @@ export function LibrarySidebar({
             icon={<Network strokeWidth={1.8} />}
             label={t("nav.graph")}
             onClick={() => setLibraryPanelMode("graph")}
+          />
+          <NavButton
+            active={libraryPanelMode === "mindmap"}
+            collapsed={collapsed}
+            icon={<Waypoints strokeWidth={1.8} />}
+            label={t("nav.mindmap")}
+            onClick={() => setLibraryPanelMode("mindmap")}
           />
           <NavButton
             active={libraryPanelMode === "attachments"}

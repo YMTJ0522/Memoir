@@ -96,6 +96,36 @@ describe("AiChatPanel", () => {
     expect(payload.at(-1)).toEqual({ role: "user", content: "帮我总结这篇笔记" });
   });
 
+  it("chats without any selected note (free-form mode)", async () => {
+    const gateways = createMockGateways();
+    gateways.ai.chatResponses = ["自由对话回复"];
+    setGatewaysForTests(gateways);
+    useAppStore.setState({
+      workspaceRoot: "/workspace",
+      activePath: null,
+      libraryPanelMode: "ai",
+      settings: configuredAi,
+      notes: [],
+      content: "",
+    });
+    const view = render(<AiChatPanel />);
+    // 无选中笔记：空状态显示自由对话提示，不显示针对笔记的快捷命令
+    expect(view.getByText("当前没有选中笔记，AI 将以自由对话模式回答。")).toBeInTheDocument();
+    expect(view.queryByRole("button", { name: "总结全文" })).not.toBeInTheDocument();
+
+    // 直接输入并发送，不依赖任何选中笔记
+    await userEvent.type(view.getByRole("textbox"), "你好，随便聊聊");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(view.getByText("自由对话回复")).toBeInTheDocument();
+    });
+    expect(gateways.ai.chatCalls).toHaveLength(1);
+    const payload = gateways.ai.chatCalls[0].messages;
+    // 没有笔记上下文 system 消息，只有系统角色 + 用户消息
+    expect(payload.filter((m) => m.role === "system")).toHaveLength(1);
+    expect(payload.at(-1)).toEqual({ role: "user", content: "你好，随便聊聊" });
+  });
+
   it("omits the system note context when the toggle is off", async () => {
     const gateways = createMockGateways();
     gateways.ai.chatResponses = ["回复"];

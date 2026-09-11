@@ -27,7 +27,6 @@ import {
   Strikethrough,
   Table,
   Trash2,
-  WandSparkles,
 } from "lucide-react";
 import { forwardRef, lazy, Suspense, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconButton, Tooltip, cn } from "../../components/ui";
@@ -616,7 +615,7 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         key: string;
         label: string;
         icon: typeof Bold;
-        menu: "heading" | "inline" | "note" | "block" | "ai";
+        menu: "heading" | "inline" | "note" | "block";
         width: number;
       };
 
@@ -655,16 +654,6 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
     { kind: "button", key: "math", label: t("toolbar.math"), icon: Sigma, action: runMathBlock },
     { kind: "button", key: "rule", label: t("toolbar.rule"), icon: Minus, action: runHorizontalRule },
     { kind: "dropdown", key: "moreBlocks", label: t("toolbar.moreBlocks"), icon: Blocks, menu: "block", width: 192 },
-    // Group 6: AI assisted editing on the current selection.
-    { kind: "divider", key: "d5" },
-    {
-      kind: "dropdown",
-      key: "aiEdit",
-      label: t("toolbar.aiEdit"),
-      icon: Sparkles,
-      menu: "ai",
-      width: 160,
-    },
   ];
 
   return (
@@ -807,22 +796,9 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
           entry.kind === "divider" ? (
             <span aria-hidden="true" className="toolbar-group-divider" key={entry.key} />
           ) : entry.kind === "dropdown" ? (
-            <Tooltip
-              key={entry.key}
-              label={entry.key === "aiEdit" && aiBusy ? t("editor.aiBusy") : entry.label}
-              suppress={openDropdownKey === entry.key}
-            >
+            <Tooltip key={entry.key} label={entry.label} suppress={openDropdownKey === entry.key}>
               <ToolbarDropdownButton
-                disabled={entry.key === "aiEdit" && aiBusy}
-                icon={
-                  entry.key === "aiEdit" && aiBusy ? (
-                    <span className="toolbar-ai-spinning" role="status">
-                      <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
-                    </span>
-                  ) : (
-                    <entry.icon className="h-3.5 w-3.5" />
-                  )
-                }
+                icon={<entry.icon className="h-3.5 w-3.5" />}
                 label={entry.label}
                 onOpenChange={(isOpen) => setOpenDropdownKey(isOpen ? entry.key : null)}
                 width={entry.width}
@@ -905,42 +881,6 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
                         onSelect={() => {
                           close();
                           runFootnote();
-                        }}
-                        separatorBefore
-                      />
-                    </>
-                  ) : entry.menu === "ai" ? (
-                    <>
-                      <ToolbarMenuItem
-                        icon={<WandSparkles className="h-3.5 w-3.5" />}
-                        label={t("editor.aiExpand")}
-                        onSelect={() => {
-                          close();
-                          void runAiOnSelection("expand");
-                        }}
-                      />
-                      <ToolbarMenuItem
-                        icon={<WandSparkles className="h-3.5 w-3.5" />}
-                        label={t("editor.aiPolish")}
-                        onSelect={() => {
-                          close();
-                          void runAiOnSelection("polish");
-                        }}
-                      />
-                      <ToolbarMenuItem
-                        icon={<WandSparkles className="h-3.5 w-3.5" />}
-                        label={t("editor.aiSummarize")}
-                        onSelect={() => {
-                          close();
-                          void runAiOnSelection("summarize");
-                        }}
-                      />
-                      <ToolbarMenuItem
-                        icon={<WandSparkles className="h-3.5 w-3.5" />}
-                        label={t("editor.aiTranslate")}
-                        onSelect={() => {
-                          close();
-                          void runAiOnSelection("translate");
                         }}
                         separatorBefore
                       />

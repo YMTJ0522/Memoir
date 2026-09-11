@@ -454,7 +454,7 @@ export default function AiChatPanel({ className }: { className?: string }) {
                     {t("ai.emptyTitle")}
                   </h3>
                   <p className="mt-1.5 text-[12.5px] leading-6 text-muted">{t("ai.emptyHint")}</p>
-                  {activeNote && useNoteContext && (
+                  {activeNote && useNoteContext ? (
                     <div className="ai-quick-grid mt-5 grid w-full grid-cols-2 gap-2">
                       {QUICK_COMMANDS.map((command) => (
                         <button
@@ -469,6 +469,10 @@ export default function AiChatPanel({ className }: { className?: string }) {
                         </button>
                       ))}
                     </div>
+                  ) : (
+                    <p className="ai-no-note-hint mt-5 text-[12px] leading-5 text-muted">
+                      {t("ai.noNoteHint")}
+                    </p>
                   )}
                 </div>
               ) : (
