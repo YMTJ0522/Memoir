@@ -3,6 +3,7 @@ import {
   BookOpen,
   Code2,
   FileText,
+  FileUp,
   Link2,
   ListTree,
   Plus,
@@ -72,6 +73,7 @@ export function NoteList({
   const setSettings = useAppStore((state) => state.setSettings);
   const selectNote = useAppStore((state) => state.selectNote);
   const importAttachments = useAppStore((state) => state.importAttachments);
+  const importArticles = useAppStore((state) => state.importArticles);
   const { t, tc, locale } = useI18n();
   const [menuTarget, setMenuTarget] = useState<NoteMenuTarget | null>(null);
   const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null);
@@ -166,13 +168,23 @@ export function NoteList({
           ) : mode === "index" || mode === "graph" || mode === "trash" || mode === "ai" ? (
             <span aria-hidden className="h-8 w-8" />
           ) : mode === "notes" ? (
-            <IconButton label={t("library.newNote")} onClick={() => onCreate()}>
-              <Plus className="h-4 w-4" />
-            </IconButton>
+            <div className="flex items-center gap-1.5">
+              <IconButton label={t("library.importNote")} onClick={() => void importArticles()}>
+                <FileUp className="h-4 w-4" />
+              </IconButton>
+              <IconButton label={t("library.newNote")} onClick={() => onCreate()}>
+                <Plus className="h-4 w-4" />
+              </IconButton>
+            </div>
           ) : (
-            <IconButton label={t("library.newNote")} onClick={() => onCreate()}>
-              <Plus className="h-4 w-4" />
-            </IconButton>
+            <div className="flex items-center gap-1.5">
+              <IconButton label={t("library.importNote")} onClick={() => void importArticles()}>
+                <FileUp className="h-4 w-4" />
+              </IconButton>
+              <IconButton label={t("library.newNote")} onClick={() => onCreate()}>
+                <Plus className="h-4 w-4" />
+              </IconButton>
+            </div>
           )}
         </header>
       )}

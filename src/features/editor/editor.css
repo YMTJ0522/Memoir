@@ -103,6 +103,59 @@
   color: var(--memoir-muted);
 }
 
+/* AI toolbar entry while an operation streams: pulsing gradient ring + a
+   gentle sparkle spin so the button visibly reacts while waiting. */
+.toolbar-ai-spinning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: memoir-ai-spin 1.6s linear infinite;
+}
+
+@keyframes memoir-ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Success notice after an AI action replaced the selection (bottom toast). */
+.editor-ai-notice {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 1px solid color-mix(in srgb, var(--memoir-accent) 32%, var(--memoir-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--memoir-elevated) 96%, var(--memoir-accent));
+  color: var(--memoir-text);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 10px 30px rgb(37 33 27 / 14%);
+  transform: translateX(-50%);
+  animation: memoir-ai-notice-in 220ms var(--memoir-ease);
+  pointer-events: none;
+}
+
+.editor-ai-notice svg {
+  color: var(--memoir-accent);
+}
+
+@keyframes memoir-ai-notice-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
 /* Table grid picker (8×8) portaled below the table toolbar button. */
 .toolbar-grid-picker {
   position: fixed;

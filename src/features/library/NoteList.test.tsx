@@ -292,17 +292,32 @@ describe("NoteList", () => {
     expect(view.getByRole("button", { name: "导入图片 / 视频" })).toBeInTheDocument();
   });
 
-  it("keeps the notes header to just the new note button (import lives in the editor toolbar)", () => {
+  it("places the import articles button next to new note in the notes header", async () => {
+    const importArticles = vi.fn().mockResolvedValue(undefined);
+    const original = useAppStore.getState().importArticles;
     useAppStore.setState({
       libraryPanelMode: "notes",
       workspaceRoot: "/workspace",
+      importArticles,
     });
-    const view = render(
-      <NoteList onCreate={() => undefined} onDelete={() => undefined} onRename={() => undefined} />,
-    );
+    try {
+      const user = userEvent.setup();
+      const view = render(
+        <NoteList onCreate={() => undefined} onDelete={() => undefined} onRename={() => undefined} />,
+      );
 
-    expect(view.queryByRole("button", { name: "导入文章" })).not.toBeInTheDocument();
-    expect(view.getByRole("button", { name: "新建笔记" })).toBeInTheDocument();
+      const importButton = view.getByRole("button", { name: "导入文章" });
+      const newButton = view.getByRole("button", { name: "新建笔记" });
+      expect(importButton).toBeInTheDocument();
+      expect(newButton).toBeInTheDocument();
+      // Import sits to the left of new note for a natural grouping.
+      expect(importButton.compareDocumentPosition(newButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      await user.click(importButton);
+      expect(importArticles).toHaveBeenCalledTimes(1);
+    } finally {
+      useAppStore.setState({ importArticles: original });
+    }
   });
 
   it("shows the index inspector from the sidebar, not a duplicate header tab", async () => {

@@ -53,4 +53,68 @@ describe("EditorContextMenu", () => {
     expect(view.getByRole("menuitem", { name: "复制" })).toBeDisabled();
     expect(view.getByRole("menuitem", { name: "粘贴" })).toBeEnabled();
   });
+
+  it("runs AI actions on the selection from the context menu", async () => {
+    const onAiAction = vi.fn();
+    const user = userEvent.setup();
+    const view = render(
+      <EditorContextMenu
+        aiEnabled
+        onAiAction={onAiAction}
+        onClose={() => undefined}
+        onCopy={() => undefined}
+        onCut={() => undefined}
+        onPaste={() => undefined}
+        onRedo={() => undefined}
+        onSelectAll={() => undefined}
+        onUndo={() => undefined}
+        target={{ x: 12, y: 20, hasSelection: true, canUndo: false, canRedo: false }}
+      />,
+    );
+
+    await user.click(view.getByRole("menuitem", { name: "润色" }));
+    expect(onAiAction).toHaveBeenCalledWith("polish");
+    await user.click(view.getByRole("menuitem", { name: "扩写" }));
+    expect(onAiAction).toHaveBeenCalledWith("expand");
+  });
+
+  it("disables AI actions when nothing is selected or AI is busy", () => {
+    const view = render(
+      <EditorContextMenu
+        aiBusy
+        aiEnabled
+        onAiAction={() => undefined}
+        onClose={() => undefined}
+        onCopy={() => undefined}
+        onCut={() => undefined}
+        onPaste={() => undefined}
+        onRedo={() => undefined}
+        onSelectAll={() => undefined}
+        onUndo={() => undefined}
+        target={{ x: 8, y: 8, hasSelection: true, canUndo: false, canRedo: false }}
+      />,
+    );
+
+    expect(view.getByRole("menuitem", { name: "扩写" })).toBeDisabled();
+    expect(view.getByRole("menuitem", { name: "翻译" })).toBeDisabled();
+  });
+
+  it("hides the AI group when AI is not configured", () => {
+    const view = render(
+      <EditorContextMenu
+        aiEnabled={false}
+        onAiAction={() => undefined}
+        onClose={() => undefined}
+        onCopy={() => undefined}
+        onCut={() => undefined}
+        onPaste={() => undefined}
+        onRedo={() => undefined}
+        onSelectAll={() => undefined}
+        onUndo={() => undefined}
+        target={{ x: 8, y: 8, hasSelection: true, canUndo: false, canRedo: false }}
+      />,
+    );
+
+    expect(view.queryByRole("menuitem", { name: "扩写" })).not.toBeInTheDocument();
+  });
 });

@@ -267,6 +267,12 @@ export const en = {
   "editor.aiTranslate": "Translate",
   "editor.aiSelectHint": "Select text in the editor first.",
   "editor.aiBusy": "AI working…",
+  "editor.aiGroup": "AI actions",
+  "editor.aiDone": "AI finished",
+  "editor.aiDoneExpand": "Expansion done",
+  "editor.aiDonePolish": "Polish done",
+  "editor.aiDoneSummarize": "Summary done",
+  "editor.aiDoneTranslate": "Translation done",
 
   "toolbar.heading": "Title",
   "toolbar.aiEdit": "AI edit",

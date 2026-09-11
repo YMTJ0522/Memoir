@@ -88,3 +88,30 @@
   margin: 4px 6px;
   background: color-mix(in srgb, var(--memoir-border) 88%, transparent);
 }
+
+/* Inset group caption (e.g. the AI actions group): muted label row with a
+   leading icon, matching inkstone's grouped dropdown look. */
+.memoir-context-menu-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 22px;
+  padding: 0 8px;
+  color: var(--memoir-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.memoir-context-menu-group-icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.memoir-context-menu-group-icon svg {
+  width: 12px;
+  height: 12px;
+}

@@ -264,6 +264,12 @@ export const zh = {
   "editor.aiTranslate": "翻译",
   "editor.aiSelectHint": "请先在编辑器中选中要处理的文字。",
   "editor.aiBusy": "AI 处理中…",
+  "editor.aiGroup": "AI 操作",
+  "editor.aiDone": "AI 已完成处理",
+  "editor.aiDoneExpand": "扩写完成",
+  "editor.aiDonePolish": "润色完成",
+  "editor.aiDoneSummarize": "总结完成",
+  "editor.aiDoneTranslate": "翻译完成",
 
   "toolbar.heading": "标题",
   "toolbar.aiEdit": "AI 编辑",

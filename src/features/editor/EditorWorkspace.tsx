@@ -5,7 +5,6 @@ import {
   Code,
   ExternalLink,
   FileDown,
-  FileUp,
   Heading,
   Highlighter,
   History,
@@ -163,7 +162,6 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
   const savePastedImages = useAppStore((state) => state.savePastedImages);
   const importDroppedImages = useAppStore((state) => state.importDroppedImages);
   const importAttachments = useAppStore((state) => state.importAttachments);
-  const importArticles = useAppStore((state) => state.importArticles);
   const { t } = useI18n();
   const splitRef = useRef<HTMLDivElement>(null);
   const [splitWidth, setSplitWidth] = useState(0);
@@ -176,6 +174,11 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
   const [openDropdownKey, setOpenDropdownKey] = useState<string | null>(null);
   // AI selected-text operation is in flight (spinner on the toolbar entry).
   const [aiBusy, setAiBusy] = useState(false);
+  // AI is configured at all; hides the right-click AI group when off.
+  const aiConfigured = isAiConfigured(settings.ai);
+  // Success toast after an AI operation replaced the selection.
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const aiNoticeTimer = useRef(0);
   // Pending note-syntax picker behind the "note syntax" menu: choose a note
   // (or paste a remote image URL) instead of inserting an empty token.
   const [noteSyntaxDialog, setNoteSyntaxDialog] = useState<NoteSyntaxDialogState>(null);
@@ -507,6 +510,17 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
     [t, withView],
   );
 
+  const showAiNotice = useCallback((message: string) => {
+    window.clearTimeout(aiNoticeTimer.current);
+    setAiNotice(message);
+    aiNoticeTimer.current = window.setTimeout(() => setAiNotice(null), 2400);
+  }, []);
+
+  useEffect(
+    () => () => window.clearTimeout(aiNoticeTimer.current),
+    [],
+  );
+
   // AI assisted editing: run an operation on the current selection and
   // replace it with the streamed result.
   const runAiOnSelection = useCallback(
@@ -560,6 +574,13 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         const result = reply.content.trim();
         if (result) {
           editorRef.current?.replaceSelection(result);
+          const doneKeys = {
+            expand: "editor.aiDoneExpand",
+            polish: "editor.aiDonePolish",
+            summarize: "editor.aiDoneSummarize",
+            translate: "editor.aiDoneTranslate",
+          } as const;
+          showAiNotice(t(doneKeys[kind]));
         }
       } catch (error) {
         useAppStore.setState({
@@ -571,7 +592,7 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         setAiBusy(false);
       }
     },
-    [aiBusy, mapGatewayError, t],
+    [aiBusy, mapGatewayError, showAiNotice, t],
   );
 
   type ToolbarEntry =
@@ -643,15 +664,6 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
       icon: Sparkles,
       menu: "ai",
       width: 160,
-    },
-    { kind: "divider", key: "d6" },
-    // Group 7: import an external document as a new note.
-    {
-      kind: "button",
-      key: "importArticle",
-      label: t("library.importNote"),
-      icon: FileUp,
-      action: () => void importArticles(),
     },
   ];
 
@@ -795,10 +807,22 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
           entry.kind === "divider" ? (
             <span aria-hidden="true" className="toolbar-group-divider" key={entry.key} />
           ) : entry.kind === "dropdown" ? (
-            <Tooltip key={entry.key} label={entry.label} suppress={openDropdownKey === entry.key}>
+            <Tooltip
+              key={entry.key}
+              label={entry.key === "aiEdit" && aiBusy ? t("editor.aiBusy") : entry.label}
+              suppress={openDropdownKey === entry.key}
+            >
               <ToolbarDropdownButton
                 disabled={entry.key === "aiEdit" && aiBusy}
-                icon={<entry.icon className="h-3.5 w-3.5" />}
+                icon={
+                  entry.key === "aiEdit" && aiBusy ? (
+                    <span className="toolbar-ai-spinning" role="status">
+                      <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
+                    </span>
+                  ) : (
+                    <entry.icon className="h-3.5 w-3.5" />
+                  )
+                }
                 label={entry.label}
                 onOpenChange={(isOpen) => setOpenDropdownKey(isOpen ? entry.key : null)}
                 width={entry.width}
@@ -1071,6 +1095,9 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         </div>
       )}
       <EditorContextMenu
+        aiBusy={aiBusy}
+        aiEnabled={aiConfigured}
+        onAiAction={(kind) => void runAiOnSelection(kind)}
         onClose={() => setEditorMenu(null)}
         onCopy={() => void editorRef.current?.copy()}
         onCut={() => void editorRef.current?.cut()}
@@ -1083,6 +1110,12 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         onUndo={() => editorRef.current?.undo()}
         target={editorMenu}
       />
+      {aiNotice && (
+        <div className="editor-ai-notice" role="status">
+          <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
+          {aiNotice}
+        </div>
+      )}
       <NotePickerDialog
         catalog={graph.nodes}
         embed={noteSyntaxDialog?.kind === "notePicker" ? noteSyntaxDialog.embed : false}

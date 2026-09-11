@@ -90,29 +90,18 @@ describe("EditorWorkspace PDF export", () => {
 });
 
 describe("EditorWorkspace article import", () => {
-  it("places the import article button last in the markdown toolbar and triggers the store action", async () => {
-    const importArticles = vi.fn().mockResolvedValue(undefined);
-    const original = useAppStore.getState().importArticles;
-    useAppStore.setState({ importArticles, workspaceRoot: "/workspace" });
+  it("keeps the import article button out of the markdown toolbar (it lives in the notes header)", () => {
+    useAppStore.setState({ workspaceRoot: "/workspace" });
     try {
-      const user = userEvent.setup();
       const view = render(
         <EditorWorkspace isDark={false} onDelete={() => undefined} onRename={() => undefined} />,
       );
 
       const toolbar = view.getByRole("toolbar", { name: "Markdown 工具栏" });
-      const buttons = view.getAllByRole("button", { name: "导入文章" });
-      expect(buttons).toHaveLength(1);
-      expect(toolbar.contains(buttons[0])).toBe(true);
-
-      // It must be the last interactive toolbar entry (after the "more blocks" dropdown).
-      const interactive = toolbar.querySelectorAll("button");
-      expect(interactive[interactive.length - 1]).toBe(buttons[0]);
-
-      await user.click(buttons[0]);
-      expect(importArticles).toHaveBeenCalledTimes(1);
+      expect(toolbar.textContent).not.toContain("导入文章");
+      expect(view.queryByRole("button", { name: "导入文章" })).not.toBeInTheDocument();
     } finally {
-      useAppStore.setState({ importArticles: original });
+      useAppStore.setState({ workspaceRoot: null });
     }
   });
 });
