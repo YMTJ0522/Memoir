@@ -40,6 +40,18 @@ const FORMAT_KEYS: Record<ExportFormat, { dialog: MessageKey; exporting: Message
     exported: "status.exportedWord",
     failed: "errors.exportWord",
   },
+  png: {
+    dialog: "dialog.exportPng",
+    exporting: "editor.exporting",
+    exported: "status.exportedPng",
+    failed: "errors.exportPng",
+  },
+  svg: {
+    dialog: "dialog.exportSvg",
+    exporting: "editor.exporting",
+    exported: "status.exportedSvg",
+    failed: "errors.exportSvg",
+  },
 };
 
 export async function resolveNoteContent(relativePath: string) {

@@ -110,7 +110,7 @@ describe("AiChatPanel", () => {
     });
     const view = render(<AiChatPanel />);
     // 无选中笔记：空状态显示自由对话提示，不显示针对笔记的快捷命令
-    expect(view.getByText("当前没有选中笔记，AI 将以自由对话模式回答。")).toBeInTheDocument();
+    expect(view.getByText("有什么想聊的，直接问我吧")).toBeInTheDocument();
     expect(view.queryByRole("button", { name: "总结全文" })).not.toBeInTheDocument();
 
     // 直接输入并发送，不依赖任何选中笔记
@@ -223,9 +223,6 @@ describe("AiChatPanel", () => {
     });
     await userEvent.click(view.getAllByRole("button", { name: "新对话" })[0]);
     expect(view.getByText("告诉我你想怎么修改这篇笔记")).toBeInTheDocument();
-    expect(
-      view.getByText("描述你的写作需求，或点击下面的快捷操作，AI 会结合当前笔记回答。"),
-    ).toBeInTheDocument();
   });
 
   it("switches the referenced note from the note picker", async () => {

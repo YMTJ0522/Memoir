@@ -44,6 +44,7 @@ import {
   type RawNoteFile,
 } from "../domain/notes";
 import { flushLiveEditor } from "../domain/live-editor";
+import { normalizeTags, updateNoteTags } from "../features/library/note-tags";
 import { parseNote } from "../features/library/note-utils";
 import { resolveLocale } from "../i18n/locale";
 import { t, tc, type MessageKey, type MessageParams } from "../i18n/translate";
@@ -816,6 +817,50 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         await get().deleteNote(activePath);
       },
 
+      async setNoteTags(relativePath, tags) {
+        syncLiveEditorContent();
+        const { workspaceRoot, activePath, content, savedContent, loadedContentPath } = get();
+        if (!workspaceRoot || !relativePath) return;
+        const normalized = normalizeTags(tags);
+        const note = get().notes.find((item) => item.relativePath === relativePath);
+        const currentTags = note?.tags ?? [];
+        if (
+          currentTags.length === normalized.length &&
+          currentTags.every((tag) => normalized.includes(tag))
+        ) return;
+        set({ isLoading: true, error: "" });
+        try {
+          const isActive = relativePath === activePath;
+          const outgoingContent = isActive && content !== savedContent ? content : null;
+          const sourceContent =
+            isActive && loadedContentPath === relativePath
+              ? (outgoingContent ?? content)
+              : await gateways.workspace.readNote(workspaceRoot, relativePath);
+          const nextContent = updateNoteTags(sourceContent, normalized);
+          await gateways.workspace.writeNote(workspaceRoot, relativePath, nextContent);
+          if (isActive) {
+            await gateways.persistence.deleteDraft(workspaceRoot, relativePath);
+            set({
+              content: nextContent,
+              savedContent: nextContent,
+              loadedContentPath: relativePath,
+            });
+          }
+          const page = await gateways.workspace.queryLibrary(workspaceRoot, currentQuery());
+          await applyLibraryPage(
+            workspaceRoot,
+            page,
+            isActive ? relativePath : undefined,
+            { selectIfNeeded: isActive },
+          );
+        } catch (error) {
+          set({
+            isLoading: false,
+            error: storeT(get().settings, "errors.setNoteTags", { message: toMessage(error) }),
+          });
+        }
+      },
+
       async restoreNoteVersion(versionId) {
         syncLiveEditorContent();
         const { workspaceRoot, activePath, savedContent, loadedContentPath } = get();
@@ -1210,7 +1255,10 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         void runLibraryQuery();
       },
       setLibraryPanelMode(libraryPanelMode) {
-        const isMainArea = libraryPanelMode === "graph" || libraryPanelMode === "mindmap";
+        const isMainArea =
+          libraryPanelMode === "graph" ||
+          libraryPanelMode === "mindmap" ||
+          libraryPanelMode === "flowchart";
         set({
           libraryPanelMode,
           mobilePanel: isMainArea ? "editor" : "library",
@@ -1237,11 +1285,17 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
       },
       deleteAiSession(id) {
         set((state) => {
+          const index = state.aiSessions.findIndex((session) => session.id === id);
           const sessions = state.aiSessions.filter((session) => session.id !== id);
-          const activeAiSessionId =
-            state.activeAiSessionId === id
-              ? (sessions.at(-1)?.id ?? null)
-              : state.activeAiSessionId;
+          let activeAiSessionId = state.activeAiSessionId;
+          if (state.activeAiSessionId === id) {
+            // Switch to the neighbour of the deleted session (previous one,
+            // falling back to the next) instead of jumping to the list tail.
+            const fallback = sessions[index - 1] ?? sessions[index] ?? sessions.at(-1);
+            activeAiSessionId = fallback?.id ?? null;
+          } else if (activeAiSessionId && !sessions.some((s) => s.id === activeAiSessionId)) {
+            activeAiSessionId = sessions.at(-1)?.id ?? null;
+          }
           return { aiSessions: sessions, activeAiSessionId };
         });
         persistAiSessions();

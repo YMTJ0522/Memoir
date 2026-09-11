@@ -42,7 +42,7 @@ export type ImportSourcePayload = {
   bytesBase64: string;
 };
 
-export type ExportFormat = "pdf" | "html" | "markdown" | "word";
+export type ExportFormat = "pdf" | "html" | "markdown" | "word" | "png" | "svg";
 
 export interface ExportDialogOptions {
   defaultPath: string;
@@ -55,6 +55,8 @@ export const EXPORT_FILTERS: Record<ExportFormat, { name: string; extensions: st
   html: { name: "HTML", extensions: ["html"], mime: "text/html;charset=utf-8" },
   markdown: { name: "Markdown", extensions: ["md"], mime: "text/markdown;charset=utf-8" },
   word: { name: "Word", extensions: ["docx"], mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+  png: { name: "PNG 图片", extensions: ["png"], mime: "image/png" },
+  svg: { name: "SVG 矢量图", extensions: ["svg"], mime: "image/svg+xml" },
 };
 
 export interface WorkspaceGateway {

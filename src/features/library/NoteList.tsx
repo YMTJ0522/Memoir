@@ -53,12 +53,14 @@ export function NoteList({
   onCreate,
   onRename,
   onDelete,
+  onCategorize,
   onInsertAttachment,
   className,
 }: {
   onCreate: () => void;
   onRename: (path: string) => void;
   onDelete: (path: string) => void;
+  onCategorize?: (path: string) => void;
   onInsertAttachment?: (markdown: string) => void;
   className?: string;
 }) {
@@ -300,6 +302,7 @@ export function NoteList({
         onClose={() => setMenuTarget(null)}
         onDelete={onDelete}
         onRename={onRename}
+        onCategorize={onCategorize}
         target={menuTarget}
       />
     </section>

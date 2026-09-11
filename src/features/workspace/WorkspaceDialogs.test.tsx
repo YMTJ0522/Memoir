@@ -327,4 +327,82 @@ describe("WorkspaceDialogs", () => {
     await user.click(view.getByRole("button", { name: "移入回收站" }));
     expect(deleteNote).toHaveBeenCalledWith("alpha.md");
   });
+
+  it("categorizes a note and keeps existing tags editable", async () => {
+    const setNoteTags = vi.fn().mockResolvedValue(undefined);
+    useAppStore.setState({
+      notes: [
+        {
+          relativePath: "工作/alpha.md",
+          fileName: "alpha.md",
+          extension: "md",
+          modifiedMs: 1,
+          size: 10,
+          title: "Alpha",
+          tags: ["日记"],
+          excerpt: "",
+          favorite: false,
+        },
+      ],
+      setNoteTags,
+    });
+    function CategorizeHarness() {
+      const { openCategorize } = useWorkspaceDialogs();
+      return (
+        <button onClick={() => openCategorize("工作/alpha.md")} type="button">
+          打开归类
+        </button>
+      );
+    }
+    const user = userEvent.setup();
+    const view = render(
+      <WorkspaceDialogsProvider>
+        <CategorizeHarness />
+      </WorkspaceDialogsProvider>,
+    );
+
+    await user.click(view.getByRole("button", { name: "打开归类" }));
+    const dialog = view.getByRole("dialog", { name: "归类笔记" });
+    expect(dialog).toBeInTheDocument();
+    // Existing tag shows up as a removable chip.
+    expect(view.getByRole("button", { name: "移除 日记" })).toBeInTheDocument();
+
+    await user.click(view.getByRole("button", { name: "保存" }));
+    expect(setNoteTags).toHaveBeenCalledWith("工作/alpha.md", ["日记"]);
+    await waitFor(() => {
+      expect(view.queryByRole("dialog", { name: "归类笔记" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("saves updated tags with newly typed tag tokens on categorize submit", async () => {
+    const setNoteTags = vi.fn().mockResolvedValue(undefined);
+    useAppStore.setState({
+      activePath: "工作/alpha.md",
+      notes: [],
+      setNoteTags,
+    });
+    function CategorizeHarness() {
+      const { openCategorize } = useWorkspaceDialogs();
+      return (
+        <button onClick={() => openCategorize()} type="button">
+          归类当前笔记
+        </button>
+      );
+    }
+    const user = userEvent.setup();
+    const view = render(
+      <WorkspaceDialogsProvider>
+        <CategorizeHarness />
+      </WorkspaceDialogsProvider>,
+    );
+
+    await user.click(view.getByRole("button", { name: "归类当前笔记" }));
+    const input = view.getByLabelText("标签（可选）") as HTMLInputElement;
+    // Type comma-separated tokens; the comma commits "work" as a chip and
+    // "ideas" remains as the pending query text.
+    await user.type(input, "work,ideas");
+    expect(input.value).toBe("ideas");
+    await user.click(view.getByRole("button", { name: "保存" }));
+    expect(setNoteTags).toHaveBeenCalledWith("工作/alpha.md", ["work", "ideas"]);
+  });
 });

@@ -215,6 +215,56 @@ await store.getState().importArticles();
     expect(store.getState().content).toBe("# Keep editing");
   });
 
+  it("sets tags on the active note and refreshes its metadata", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    await store.getState().setNoteTags("one.md", ["work", "ideas"]);
+    const note = store.getState().notes.find((item) => item.relativePath === "one.md");
+    expect(note?.tags).toEqual(["work", "ideas"]);
+    expect(gateways.workspace.files.get("one.md")).toContain('tags: ["work", "ideas"]');
+    expect(gateways.workspace.files.get("one.md")).toContain("title: One");
+    expect(store.getState().content).toContain('tags: ["work", "ideas"]');
+    expect(store.getState().content).toContain("Original");
+  });
+
+  it("sets tags on a non-active note without disturbing the editor", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    await store.getState().createNote({ title: "Second", extension: "md" });
+    await store.getState().selectNote("one.md");
+    store.getState().setContent("# Keep editing");
+
+    await store.getState().setNoteTags("second.md", ["todo"]);
+    expect(store.getState().activePath).toBe("one.md");
+    expect(store.getState().content).toBe("# Keep editing");
+    const second = store.getState().notes.find((note) => note.relativePath === "second.md");
+    expect(second?.tags).toEqual(["todo"]);
+    expect(gateways.workspace.files.get("second.md")).toContain('tags: ["todo"]');
+  });
+
+  it("skips the write when the tag list is unchanged", async () => {
+    const gateways = createMockGateways();
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+    const writesBefore = gateways.workspace.writes.length;
+
+    await store.getState().setNoteTags("one.md", ["test"]);
+    expect(gateways.workspace.writes.length).toBe(writesBefore);
+  });
+
+  it("surfaces setNoteTags failures", async () => {
+    const gateways = createMockGateways();
+    gateways.workspace.failWrite = true;
+    const store = createAppStore(gateways);
+    await store.getState().openWorkspace("/workspace");
+
+    await store.getState().setNoteTags("one.md", ["work"]);
+    expect(store.getState().error).toContain("Couldn't save tags");
+  });
+
   it("switches views, persists settings and reports successful save state", async () => {
     const gateways = createMockGateways();
     const store = createAppStore(gateways);

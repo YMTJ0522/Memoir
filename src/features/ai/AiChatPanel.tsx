@@ -29,7 +29,7 @@ import { handleWindowDragMouseDown } from "../window/window-drag";
 import { useAppStore } from "../../store/app-store";
 import type { AiChatMessage, AiSession } from "../../store/types";
 import { renderMarkdownLite } from "./markdown-lite";
-import { Button, IconButton, Select, Toggle } from "../../components/ui";
+import { Button, IconButton, Select, Toggle, cn } from "../../components/ui";
 
 const MAX_NOTE_CONTEXT_CHARS = 30_000;
 const SYSTEM_ROLE = `你是用户的 AI 写作助手。请始终使用简体中文回复，语气自然专业。
@@ -267,27 +267,36 @@ export default function AiChatPanel({ className }: { className?: string }) {
 
   const retry = async () => {
     if (!activeSession) return;
-    const errorIndex = messages.findIndex((message) => message.status === "error");
+    // Read the freshest session from the store instead of the render closure
+    // so a completed stream cannot be re-sent with stale history.
+    const state = useAppStore.getState();
+    const session = state.aiSessions.find((item) => item.id === state.activeAiSessionId);
+    if (!session) return;
+    const errorIndex = session.messages.findIndex((message) => message.status === "error");
     if (errorIndex < 0) return;
-    const errorUserMessage = messages[errorIndex - 1];
+    const errorUserMessage = session.messages[errorIndex - 1];
     if (!errorUserMessage || errorUserMessage.role !== "user") return;
-    updateAiSession(activeSession.id, { messages: messages.slice(0, errorIndex) });
+    updateAiSession(session.id, { messages: session.messages.slice(0, errorIndex) });
     await send(errorUserMessage.content);
   };
 
   /** Drop the last exchange and ask the same question again. */
   const regenerateLast = async () => {
     if (!activeSession || isSending) return;
+    // Same as retry: operate on the freshest session state.
+    const state = useAppStore.getState();
+    const session = state.aiSessions.find((item) => item.id === state.activeAiSessionId);
+    if (!session) return;
     let lastUserIndex = -1;
-    for (let index = activeSession.messages.length - 1; index >= 0; index -= 1) {
-      if (activeSession.messages[index].role === "user") {
+    for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+      if (session.messages[index].role === "user") {
         lastUserIndex = index;
         break;
       }
     }
     if (lastUserIndex < 0) return;
-    const lastUserMessage = activeSession.messages[lastUserIndex];
-    updateAiSession(activeSession.id, { messages: activeSession.messages.slice(0, lastUserIndex) });
+    const lastUserMessage = session.messages[lastUserIndex];
+    updateAiSession(session.id, { messages: session.messages.slice(0, lastUserIndex) });
     await send(lastUserMessage.content);
   };
 
@@ -374,7 +383,7 @@ export default function AiChatPanel({ className }: { className?: string }) {
   };
 
   return (
-    <section aria-label={t("ai.panelTitle")} className={className}>
+    <section aria-label={t("ai.panelTitle")} className={cn("memoir-panel-in", className)}>
       <div className="ai-chat-panel flex h-full min-h-0 flex-col bg-canvas">
         <header
           className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border pl-3 pr-2"
@@ -450,29 +459,36 @@ export default function AiChatPanel({ className }: { className?: string }) {
                   <div className="ai-empty-badge">
                     <Sparkles aria-hidden strokeWidth={1.6} />
                   </div>
-                  <h3 className="mt-4 text-[14.5px] font-semibold text-text">
-                    {t("ai.emptyTitle")}
-                  </h3>
-                  <p className="mt-1.5 text-[12.5px] leading-6 text-muted">{t("ai.emptyHint")}</p>
                   {activeNote && useNoteContext ? (
-                    <div className="ai-quick-grid mt-5 grid w-full grid-cols-2 gap-2">
-                      {QUICK_COMMANDS.map((command) => (
-                        <button
-                          className="ai-quick-tile"
-                          disabled={isSending}
-                          key={command.key}
-                          onClick={() => applyQuickCommand(command.prompt)}
-                          type="button"
-                        >
-                          <QuickIcon kind={command.icon} />
-                          <span className="min-w-0 truncate">{t(command.key)}</span>
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      <h3 className="mt-4 text-[14.5px] font-semibold text-text">
+                        {t("ai.emptyTitle")}
+                      </h3>
+                      <p className="mt-1.5 text-[12.5px] leading-6 text-muted">{t("ai.emptyHint")}</p>
+                      <div className="ai-quick-grid mt-5 grid w-full grid-cols-2 gap-2">
+                        {QUICK_COMMANDS.map((command) => (
+                          <button
+                            className="ai-quick-tile"
+                            disabled={isSending}
+                            key={command.key}
+                            onClick={() => applyQuickCommand(command.prompt)}
+                            type="button"
+                          >
+                            <QuickIcon kind={command.icon} />
+                            <span className="min-w-0 truncate">{t(command.key)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   ) : (
-                    <p className="ai-no-note-hint mt-5 text-[12px] leading-5 text-muted">
-                      {t("ai.noNoteHint")}
-                    </p>
+                    <>
+                      <h3 className="mt-4 text-[14.5px] font-semibold text-text">
+                        {t("ai.emptyTitleFree")}
+                      </h3>
+                      <p className="mt-1.5 text-[12.5px] leading-6 text-muted">
+                        {t("ai.emptyHintFree")}
+                      </p>
+                    </>
                   )}
                 </div>
               ) : (

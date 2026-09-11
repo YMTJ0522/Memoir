@@ -1316,10 +1316,10 @@ fn validate_export_path(path: &str) -> AppResult<PathBuf> {
         .and_then(|value| value.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !matches!(extension.as_str(), "pdf" | "html" | "md" | "doc" | "docx") {
+    if !matches!(extension.as_str(), "pdf" | "html" | "md" | "doc" | "docx" | "png" | "svg") {
         return Err(AppError::new(
             crate::domain::ErrorCode::UnsupportedExtension,
-            "Only PDF, HTML, Markdown and Word export is supported.",
+            "Only PDF, HTML, Markdown, Word, PNG and SVG export is supported.",
         ));
     }
     Ok(path)

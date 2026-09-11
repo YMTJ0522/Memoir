@@ -6,6 +6,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  GitBranch,
   Inbox,
   Moon,
   Network,
@@ -395,6 +396,13 @@ export function LibrarySidebar({
             icon={<Waypoints strokeWidth={1.8} />}
             label={t("nav.mindmap")}
             onClick={() => setLibraryPanelMode("mindmap")}
+          />
+          <NavButton
+            active={libraryPanelMode === "flowchart"}
+            collapsed={collapsed}
+            icon={<GitBranch strokeWidth={1.8} />}
+            label={t("nav.flowchart")}
+            onClick={() => setLibraryPanelMode("flowchart")}
           />
           <NavButton
             active={libraryPanelMode === "attachments"}

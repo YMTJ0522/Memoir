@@ -972,6 +972,8 @@ fn writes_absolute_pdf_export_files_and_rejects_invalid_paths() {
         ("note.md", b"# note"),
         ("note.doc", b"<html>word</html>"),
         ("note.docx", b"PK\x03\x04docx"),
+        ("note.png", b"\x89PNG\r\n\x1a\npng-test"),
+        ("note.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>"),
     ] {
         let dest = dir.path().join(name);
         filesystem.write_export_file(dest.to_str().unwrap(), bytes).unwrap();

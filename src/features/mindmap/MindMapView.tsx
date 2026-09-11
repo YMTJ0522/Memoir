@@ -1,6 +1,8 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
+  ImageDown,
   Maximize2,
   Pencil,
   RotateCcw,
@@ -18,6 +20,7 @@ import {
   Dialog,
   IconButton,
   Input,
+  cn,
 } from "../../components/ui";
 import { useI18n } from "../../i18n/react";
 import { isTauriRuntime } from "../../platform/runtime";
@@ -25,6 +28,7 @@ import { useAppStore } from "../../store/app-store";
 import { handleWindowDragMouseDown } from "../window/window-drag";
 import { extractMindHeadings, type MindHeading } from "./mindmap-editing";
 import { applyHeadingEdit } from "./mindmap-editing";
+import { exportMindmap } from "./export-mindmap";
 
 type MindNode = {
   content: string;
@@ -100,12 +104,22 @@ const hostRef = useRef<SVGSVGElement>(null);
   const treeRef = useRef(tree);
   treeRef.current = tree;
 
+  /** Set the tree then fit once the layout is committed, so the first view is
+   *  centered instead of showing whatever pan offset markmap starts with. */
+  const rerender = async (mm: MarkmapInstance, level: number) => {
+    await mm.setData(treeRef.current, { initialExpandLevel: level });
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    await mm.fit(1.6);
+  };
+
   // Initialize markmap once on mount.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     let disposed = false;
-    void import("markmap-view").then(({ Markmap }) => {
+    void import("markmap-view").then(async ({ Markmap }) => {
       if (disposed || !hostRef.current) return;
       const mm = Markmap.create(hostRef.current, {
         autoFit: false,
@@ -114,7 +128,10 @@ const hostRef = useRef<SVGSVGElement>(null);
         maxWidth: 280,
         paddingX: 14,
         spacingVertical: 6,
-        color: () => "var(--memoir-accent)",
+        color: () =>
+          themeColors().dark
+            ? "color-mix(in srgb, var(--memoir-text) 45%, var(--memoir-muted))"
+            : "var(--memoir-accent)",
         lineWidth: () => 1.5,
       });
       markmapRef.current = mm;
@@ -122,8 +139,7 @@ const hostRef = useRef<SVGSVGElement>(null);
       // the current tree here once the instance is ready. Skip when there is
       // nothing to show yet (no note / no headings) to keep the canvas blank.
       if (treeRef.current.children.length > 0) {
-        void mm.setData(treeRef.current, { initialExpandLevel: 4 });
-        void mm.fit(1.6);
+        await rerender(mm, 4);
       }
     });
     return () => {
@@ -131,14 +147,15 @@ const hostRef = useRef<SVGSVGElement>(null);
       markmapRef.current?.destroy();
       markmapRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Render the tree whenever content or active note changes.
   useEffect(() => {
     const mm = markmapRef.current;
     if (!mm) return;
-    void mm.setData(tree, { initialExpandLevel: 4 });
-    void mm.fit(1.6);
+    void rerender(mm, 4);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree]);
 
   // Watch theme changes and refresh colors.
@@ -146,7 +163,12 @@ const hostRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const mm = markmapRef.current;
     if (!mm) return;
-    mm.setOptions({ color: () => themeColors().accent });
+    mm.setOptions({
+      color: () =>
+        themeColors().dark
+          ? "color-mix(in srgb, var(--memoir-text) 45%, var(--memoir-muted))"
+          : "var(--memoir-accent)",
+    });
     mm.updateStyle();
   }, [appearance]);
 
@@ -212,23 +234,29 @@ const hostRef = useRef<SVGSVGElement>(null);
   }, [activePath, content]);
 
   const fit = () => void markmapRef.current?.fit(1.6);
+  const doExport = (format: "png" | "svg") => {
+    const host = hostRef.current;
+    if (!host) return;
+    void exportMindmap(host, format);
+  };
   const reset = () => {
     const mm = markmapRef.current;
     if (!mm) return;
-    void mm.setData(tree, { initialExpandLevel: 1 });
-    void mm.fit(1.6);
+    void rerender(mm, 1);
   };
   const expandAll = () => {
     const mm = markmapRef.current;
     if (!mm) return;
-    void mm.setData(tree, { initialExpandLevel: 99 });
-    void mm.fit(1.6);
+    void rerender(mm, 99);
   };
 
   return (
     <section
       aria-label={t("mindmap.label")}
-      className={className ?? "flex h-full min-h-0 min-w-0 flex-col bg-canvas"}
+      className={cn(
+        "memoir-panel-in flex h-full min-h-0 min-w-0 flex-col bg-canvas",
+        className,
+      )}
     >
       <header
         className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-1.5"
@@ -245,6 +273,12 @@ const hostRef = useRef<SVGSVGElement>(null);
         </div>
         {activePath && (
           <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <IconButton label={t("mindmap.exportPng")} onClick={() => void doExport("png")}>
+              <ImageDown className="h-4 w-4" />
+            </IconButton>
+            <IconButton label={t("mindmap.exportSvg")} onClick={() => void doExport("svg")}>
+              <Download className="h-4 w-4" />
+            </IconButton>
             <IconButton label={t("mindmap.expandAll")} onClick={expandAll}>
               <UnfoldHorizontal className="h-4 w-4" />
             </IconButton>

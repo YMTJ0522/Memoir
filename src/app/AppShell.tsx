@@ -37,6 +37,7 @@ const SettingsDialog = lazy(() => import("../features/settings/SettingsDialog"))
 const EditorWorkspace = lazy(() => import("../features/editor/EditorWorkspace"));
 const NoteGraphView = lazy(() => import("../features/graph/NoteGraphView"));
 const MindMapView = lazy(() => import("../features/mindmap/MindMapView"));
+const FlowchartView = lazy(() => import("../features/flowchart/FlowchartView"));
 
 function EmptyState() {
   const openWorkspace = useAppStore((state) => state.openWorkspace);
@@ -84,7 +85,7 @@ function WorkspaceLayout({
   const mobilePanel = useAppStore((state) => state.mobilePanel);
   const setMobilePanel = useAppStore((state) => state.setMobilePanel);
   const libraryPanelMode = useAppStore((state) => state.libraryPanelMode);
-  const { openCreate, openDelete, openRename } = useWorkspaceDialogs();
+  const { openCreate, openDelete, openRename, openCategorize } = useWorkspaceDialogs();
   const { t } = useI18n();
   const editorRef = useRef<EditorHandle>(null);
   const shellRef = useRef<HTMLElement>(null);
@@ -177,6 +178,7 @@ function WorkspaceLayout({
           <NoteList
             className={panelClass("library")}
             onCreate={() => openCreate()}
+            onCategorize={openCategorize}
             onDelete={openDelete}
             onInsertAttachment={(markdown) => editorRef.current?.insertText(markdown)}
             onRename={openRename}
@@ -201,6 +203,8 @@ function WorkspaceLayout({
             <NoteGraphView />
           ) : libraryPanelMode === "mindmap" ? (
             <MindMapView />
+          ) : libraryPanelMode === "flowchart" ? (
+            <FlowchartView />
           ) : (
             <EditorWorkspace
               className="max-[760px]:grid max-[760px]:min-h-[calc(100vh-48px)]"

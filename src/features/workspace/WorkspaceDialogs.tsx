@@ -31,6 +31,7 @@ type FormDialog =
       tagQuery: string;
     }
   | { type: "rename"; from: string; name: string }
+  | { type: "categorize"; path: string; tags: string[]; tagQuery: string }
   | null;
 
 function deleteNoteTitle(
@@ -46,6 +47,7 @@ type WorkspaceDialogActions = {
   openCreate: (extension?: "md" | "mdx", folder?: string, tag?: string) => void;
   openRename: (path?: string) => void;
   openDelete: (path?: string) => void;
+  openCategorize: (path?: string) => void;
 };
 
 const WorkspaceDialogsContext = createContext<WorkspaceDialogActions | null>(null);
@@ -65,6 +67,7 @@ export function WorkspaceDialogsProvider({ children }: { children: ReactNode }) 
   const createNote = useAppStore((state) => state.createNote);
   const renameNote = useAppStore((state) => state.renameNote);
   const deleteNote = useAppStore((state) => state.deleteNote);
+  const setNoteTags = useAppStore((state) => state.setNoteTags);
   const { t, locale } = useI18n();
   const folderOptions = useMemo(() => {
     const folders = collectFolderPaths(
@@ -119,8 +122,20 @@ export function WorkspaceDialogsProvider({ children }: { children: ReactNode }) 
         const target = typeof path === "string" && path ? path : activePath;
         if (target) setDeleteTarget(target);
       },
+      openCategorize: (path) => {
+        const target = typeof path === "string" && path ? path : activePath;
+        const note = notes.find((item) => item.relativePath === target);
+        if (target) {
+          setFormDialog({
+            type: "categorize",
+            path: target,
+            tags: note?.tags ? [...note.tags] : [],
+            tagQuery: "",
+          });
+        }
+      },
     }),
-    [activePath],
+    [activePath, notes],
   );
 
   const closeForm = useCallback(() => setFormDialog(null), []);
@@ -137,6 +152,9 @@ export function WorkspaceDialogsProvider({ children }: { children: ReactNode }) 
         folder: formDialog.folder.trim() || undefined,
         tags: tags.length ? tags : undefined,
       });
+    } else if (formDialog.type === "categorize") {
+      const tags = addUniqueTags(formDialog.tags, parseTagTokens(formDialog.tagQuery));
+      await setNoteTags(formDialog.path, tags);
     } else {
       await renameNote(formDialog.from, resolveNoteRenamePath(formDialog.from, formDialog.name));
     }
@@ -151,14 +169,24 @@ export function WorkspaceDialogsProvider({ children }: { children: ReactNode }) 
           <>
             <Button onClick={closeForm}>{t("common.cancel")}</Button>
             <Button type="submit" variant="primary">
-              {formDialog?.type === "rename" ? t("common.rename") : t("common.create")}
+              {formDialog?.type === "rename"
+                ? t("common.rename")
+                : formDialog?.type === "categorize"
+                  ? t("common.save")
+                  : t("common.create")}
             </Button>
           </>
         }
         onClose={closeForm}
         onSubmit={() => void submitForm()}
         open={Boolean(formDialog)}
-        title={formDialog?.type === "rename" ? t("dialog.renameNote") : t("dialog.newNote")}
+        title={
+          formDialog?.type === "rename"
+            ? t("dialog.renameNote")
+            : formDialog?.type === "categorize"
+              ? t("dialog.categorizeNote")
+              : t("dialog.newNote")
+        }
       >
         {formDialog?.type === "create" ? (
           <div className="grid gap-3">
@@ -199,6 +227,23 @@ export function WorkspaceDialogsProvider({ children }: { children: ReactNode }) 
                 value={formDialog.tags}
               />
             </div>
+          </div>
+        ) : formDialog?.type === "categorize" ? (
+          <div className="memoir-field-label">
+            {t("dialog.tagOptional")}
+            <TagInput
+              allowCreate
+              createLabel={(name) => t("dialog.tagCreate", { name })}
+              emptyLabel={t("dialog.tagEmpty")}
+              label={t("dialog.tagOptional")}
+              onChange={(tags) => setFormDialog((current) => (current?.type === "categorize" ? { ...current, tags } : current))}
+              onQueryChange={(tagQuery) => setFormDialog((current) => (current?.type === "categorize" ? { ...current, tagQuery } : current))}
+              options={tagOptions}
+              placeholder={t("dialog.tagPlaceholder")}
+              query={formDialog.tagQuery}
+              removeLabel={(name) => t("dialog.removeTag", { name })}
+              value={formDialog.tags}
+            />
           </div>
         ) : (
           formDialog && (

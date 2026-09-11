@@ -19,7 +19,20 @@
   margin: 0;
 }
 
-/* Match node content color to the theme instead of markmap's hardcoded #333. */
-.mindmap-stage .markmap-node > foreignObject .markmap-foreign > div {
+/* Match node content color to the theme instead of markmap's hardcoded #333.
+   markmap renders text as foreignObject > div > div (the inner div carries the
+   content), so the inner layers must also inherit the theme text color. */
+.mindmap-stage .markmap {
+  --markmap-text-color: var(--memoir-text);
+}
+.mindmap-stage .markmap-node > foreignObject .markmap-foreign,
+.mindmap-stage .markmap-node > foreignObject .markmap-foreign > div,
+.mindmap-stage .markmap-node > foreignObject .markmap-foreign > div > div {
   color: var(--memoir-text);
+}
+
+/* In dark mode the accent token becomes near-white; links in that tone are too
+   harsh. Blend toward the muted token so connectors stay visible but calm. */
+[data-theme="dark"] .mindmap-stage .markmap-link {
+  stroke: color-mix(in srgb, var(--memoir-text) 45%, var(--memoir-muted));
 }

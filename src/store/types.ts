@@ -48,6 +48,7 @@ export type LibraryPanelMode =
   | "sync"
   | "graph"
   | "mindmap"
+  | "flowchart"
   | "ai"
   | "trash";
 
@@ -112,6 +113,7 @@ export type AppActions = {
   renameActiveNote(newRelativePath: string): Promise<void>;
   deleteNote(relativePath: string): Promise<void>;
   deleteActiveNote(): Promise<void>;
+  setNoteTags(relativePath: string, tags: string[]): Promise<void>;
   restoreNoteVersion(versionId: string): Promise<void>;
   toggleFavorite(relativePath?: string): Promise<void>;
   setFolderAppearance(folder: string, appearance: FolderAppearance | null): Promise<void>;

@@ -7,6 +7,7 @@ import {
   Globe,
   PencilLine,
   Star,
+  Tags,
   Trash2,
 } from "lucide-react";
 import { exportNote } from "../export/export-note";
@@ -48,11 +49,13 @@ export function NoteContextMenu({
   onClose,
   onRename,
   onDelete,
+  onCategorize,
 }: {
   target: NoteMenuTarget | null;
   onClose: () => void;
   onRename: (path: string) => void;
   onDelete: (path: string) => void;
+  onCategorize?: (path: string) => void;
 }) {
   const notes = useAppStore((state) => state.notes);
   const workspaceRoot = useAppStore((state) => state.workspaceRoot);
@@ -87,6 +90,13 @@ export function NoteContextMenu({
         label={t("menu.rename")}
         onSelect={() => onRename(note.relativePath)}
       />
+      {onCategorize && (
+        <ContextMenuItem
+          icon={<Tags />}
+          label={t("menu.categorize")}
+          onSelect={() => onCategorize(note.relativePath)}
+        />
+      )}
       <ContextMenuItem
         icon={<Copy />}
         label={t("menu.copyPath")}
