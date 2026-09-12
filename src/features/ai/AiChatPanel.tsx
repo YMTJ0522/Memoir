@@ -601,18 +601,20 @@ export default function AiChatPanel({ className }: { className?: string }) {
                               </div>
                             </div>
                           )}
-                          {/* ── 思考过程折叠面板（实时） ── */}
-                          <div className="ai-collapse-panel is-open">
-                            <div className="ai-collapse-header">
-                              <ChevronDown className="h-3 w-3" aria-hidden />
-                              <span>{t("ai.reasoningTitle")}</span>
+                          {/* ── 思考过程折叠面板（实时，仅在有内容时显示） ── */}
+                          {message.reasoning && (
+                            <div className="ai-collapse-panel is-open">
+                              <div className="ai-collapse-header">
+                                <ChevronDown className="h-3 w-3" aria-hidden />
+                                <span>{t("ai.reasoningTitle")}</span>
+                              </div>
+                              <div className="ai-collapse-body">
+                                <pre className="ai-reasoning-text">
+                                  {message.reasoning}
+                                </pre>
+                              </div>
                             </div>
-                            <div className="ai-collapse-body">
-                              <pre className="ai-reasoning-text">
-                                {message.reasoning || "…"}
-                              </pre>
-                            </div>
-                          </div>
+                          )}
                         </div>
                       ) : message.status === "error" ? (
                         <div className="ai-error">

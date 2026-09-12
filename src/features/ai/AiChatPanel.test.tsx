@@ -432,6 +432,7 @@ describe("AiChatPanel", () => {
 
     // 展开后能看到完整思考过程（流式逐字拼接，整体呈现）
     await userEvent.click(view.getByRole("button", { name: "思考过程" }));
+    // reasoning = "第一步思考第二步思考"（流式拼接）
     expect(view.getByText(/第一步思考/)).toBeInTheDocument();
     expect(view.getByText(/第二步思考/)).toBeInTheDocument();
 
