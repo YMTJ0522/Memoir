@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   ImageDown,
@@ -316,8 +317,11 @@ export default function FlowchartView({ className }: { className?: string }) {
           </div>
         ) : renderError ? (
           <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center p-6">
-            <div className="w-full max-w-md">
-              <pre className="overflow-auto rounded-lg border border-danger/30 bg-danger/5 p-4 text-left text-[12px] leading-5 text-danger whitespace-pre-wrap">
+            <div className="w-full max-w-md text-center">
+              <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-danger" strokeWidth={1.4} aria-hidden />
+              <p className="text-[13px] font-medium text-danger">{t("flowchart.renderErrorTitle")}</p>
+              <p className="mt-1 text-[12px] leading-5 text-muted">{t("flowchart.renderErrorHint")}</p>
+              <pre className="mt-3 overflow-auto rounded-lg border border-danger/30 bg-danger/5 p-3 text-left text-[11px] leading-5 text-danger whitespace-pre-wrap">
                 {renderError}
               </pre>
             </div>

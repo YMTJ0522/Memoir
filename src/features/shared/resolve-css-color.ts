@@ -49,26 +49,85 @@ export function readCssColor(property: string, fallback = "transparent"): string
   return resolved && resolved !== "rgba(0, 0, 0, 0)" ? resolved : fallback;
 }
 
-/** rgb()/rgba() → #rrggbb / #rrggbbaa (alpha dropped when 1). */
-export function rgbToHex(rgb: string): string {
-  const match = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)$/i.exec(
-    rgb.trim(),
-  );
-  if (!match) return rgb;
-  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-  const toHex = (n: number) => clamp(n).toString(16).padStart(2, "0");
-  const alpha = match[4] === undefined ? 1 : Number(match[4]);
-  if (alpha >= 1) {
-    return `#${toHex(Number(match[1]))}${toHex(Number(match[2]))}${toHex(Number(match[3]))}`;
+type Rgba = { r: number; g: number; b: number; a: number };
+
+/**
+ * Parse any browser-computed colour string into RGBA channels. Handles:
+ * - `#rgb` / `#rrggbb` / `#rrggbbaa`
+ * - `rgb()` / `rgba()` (comma or space separated)
+ * - `color(srgb r g b [/ a])` — the CSS Color 4 computed form that modern
+ *   WebView2 engines return for `color-mix(...)` values. mermaid cannot parse
+ *   this form, so it must be converted to hex before use.
+ */
+export function parseCssColor(value: string): Rgba | null {
+  const v = value.trim().toLowerCase();
+  if (!v) return null;
+
+  const hex = /^#([0-9a-f]{3,8})$/.exec(v);
+  if (hex) {
+    const h = hex[1];
+    if (h.length === 3 || h.length === 4) {
+      const expand = (c: string) => parseInt(c + c, 16);
+      return {
+        r: expand(h[0]),
+        g: expand(h[1]),
+        b: expand(h[2]),
+        a: h.length === 4 ? expand(h[3]) / 255 : 1,
+      };
+    }
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    const a = h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+    return { r, g, b, a };
   }
-  return `#${toHex(Number(match[1]))}${toHex(Number(match[2]))}${toHex(Number(match[3]))}${toHex(
-    alpha * 255,
-  )}`;
+
+  const fn =
+    /^rgba?\(\s*([\d.]+%?)[,\s]+([\d.]+%?)[,\s]+([\d.]+%?)(?:[,\s/]+([\d.]+%?))?\s*\)$/.exec(v);
+  if (fn) {
+    const chan = (n: string) =>
+      n.endsWith("%") ? Math.round((Number(n.slice(0, -1)) / 100) * 255) : Math.round(Number(n));
+    const clamp = (n: number) => Math.max(0, Math.min(255, n));
+    const a = fn[4] === undefined ? 1 : Number(fn[4].replace("%", "")) / (fn[4].endsWith("%") ? 100 : 1);
+    return { r: clamp(chan(fn[1])), g: clamp(chan(fn[2])), b: clamp(chan(fn[3])), a };
+  }
+
+  const srgb =
+    /^color\(\s*srgb\s+([\d.%]+)\s+([\d.%]+)\s+([\d.%]+)(?:\s*\/\s*([\d.%]+))?\s*\)$/.exec(v);
+  if (srgb) {
+    const chan = (n: string) =>
+      n.endsWith("%")
+        ? Math.round((Number(n.slice(0, -1)) / 100) * 255)
+        : Math.round(Number(n) * 255);
+    const clamp = (n: number) => Math.max(0, Math.min(255, n));
+    let a = 1;
+    if (srgb[4] !== undefined) {
+      a = srgb[4].endsWith("%") ? Number(srgb[4].slice(0, -1)) / 100 : Number(srgb[4]);
+    }
+    return { r: clamp(chan(srgb[1])), g: clamp(chan(srgb[2])), b: clamp(chan(srgb[3])), a };
+  }
+
+  return null;
 }
 
-/** One-shot: resolve a custom property to a concrete hex colour string. */
+/** rgb()/rgba()/color(srgb…) → #rrggbb / #rrggbbaa (alpha dropped when 1). */
+export function rgbToHex(rgb: string): string {
+  const c = parseCssColor(rgb);
+  if (!c) return rgb;
+  const toHex = (n: number) =>
+    Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  const base = `#${toHex(c.r)}${toHex(c.g)}${toHex(c.b)}`;
+  return c.a >= 1 ? base : `${base}${toHex(c.a * 255)}`;
+}
+
+/** One-shot: resolve a custom property to a concrete hex colour string.
+ *  Falls back to the given hex when the token is missing or unparseable, so
+ *  mermaid/markmap never receive an unsupported colour format. */
 export function resolveThemeColor(property: string, fallbackHex: string): string {
-  return rgbToHex(readCssColor(property, fallbackHex));
+  const resolved = rgbToHex(readCssColor(property, fallbackHex));
+  // If parsing failed the original string passes through unchanged — that
+  // would still crash mermaid, so substitute the safe fallback instead.
+  return resolved.startsWith("#") ? resolved : fallbackHex;
 }
 
 /**
@@ -76,23 +135,12 @@ export function resolveThemeColor(property: string, fallbackHex: string): string
  * returning a concrete hex. Mirrors `color-mix(in srgb, a 65%, b)`.
  */
 export function mixColors(a: string, b: string, weightA = 0.65): string {
-  const toRgb = (value: string) => {
-    const resolved = resolveCssColor(value);
-    const match = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)$/i.exec(
-      resolved,
-    );
-    return match
-      ? {
-          r: Number(match[1]),
-          g: Number(match[2]),
-          b: Number(match[3]),
-          a: match[4] === undefined ? 1 : Number(match[4]),
-        }
-      : null;
-  };
-  const ca = toRgb(a);
-  const cb = toRgb(b);
-  if (!ca || !cb) return rgbToHex(resolveCssColor(a));
+  const ca = parseCssColor(resolveCssColor(a));
+  const cb = parseCssColor(resolveCssColor(b));
+  if (!ca || !cb) {
+    const fallback = parseCssColor(resolveCssColor(a));
+    return fallback ? rgbToHex(resolveCssColor(a)) : "#808080";
+  }
   const w = Math.max(0, Math.min(1, weightA));
   const r = Math.round(ca.r * w + cb.r * (1 - w));
   const g = Math.round(ca.g * w + cb.g * (1 - w));

@@ -7,8 +7,8 @@
 /* session picker (header dropdown, compact) */
 
 .ai-session-picker {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 140px;
 }
 
 .ai-session-picker .memoir-select-field {

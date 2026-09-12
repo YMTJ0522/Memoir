@@ -213,6 +213,8 @@ export const zh = {
   "flowchart.nextDiagram": "下一个流程图",
   "flowchart.exportPng": "导出 PNG 图片",
   "flowchart.exportSvg": "导出 SVG 矢量图",
+  "flowchart.renderErrorTitle": "流程图渲染失败",
+  "flowchart.renderErrorHint": "请检查 mermaid 语法是否正确，修正后将自动刷新。",
 
   "menu.actions": "{title} 的操作",
   "menu.open": "打开",

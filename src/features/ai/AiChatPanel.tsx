@@ -409,6 +409,13 @@ export default function AiChatPanel({ className }: { className?: string }) {
             </p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Select
+              className="ai-session-picker mr-1 min-w-0"
+              label={t("ai.sessionSelect")}
+              onChange={handleSessionSelect}
+              options={sessionOptions}
+              value={activeAiSessionId ?? NEW_SESSION_VALUE}
+            />
             {activeSession && aiSessions.length > 0 && (
               <Tooltip label={t("ai.sessionDelete")}>
                 <IconButton
@@ -469,13 +476,6 @@ export default function AiChatPanel({ className }: { className?: string }) {
               ) : (
                 <span className="ai-context-chip is-free">{t("ai.contextFree")}</span>
               )}
-              <Select
-                className="ai-session-picker ml-auto min-w-0"
-                label={t("ai.sessionSelect")}
-                onChange={handleSessionSelect}
-                options={sessionOptions}
-                value={activeAiSessionId ?? NEW_SESSION_VALUE}
-              />
             </div>
 
             <div

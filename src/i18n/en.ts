@@ -216,6 +216,8 @@ export const en = {
   "flowchart.nextDiagram": "Next diagram",
   "flowchart.exportPng": "Export PNG image",
   "flowchart.exportSvg": "Export SVG vector",
+  "flowchart.renderErrorTitle": "Flowchart render failed",
+  "flowchart.renderErrorHint": "Please check the mermaid syntax. It will refresh automatically after fixing.",
 
   "menu.actions": "Actions for {title}",
   "menu.open": "Open",
