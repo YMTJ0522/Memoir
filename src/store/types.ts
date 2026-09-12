@@ -56,6 +56,8 @@ export type AiToolStep = {
   tool: string;
   args: string;
   result?: string;
+  /** Elapsed time for this step in milliseconds. */
+  elapsedMs?: number;
 };
 
 export type AiChatMessage = {

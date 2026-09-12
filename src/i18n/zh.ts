@@ -553,6 +553,7 @@ export const zh = {
   "ai.enterHint": "Enter 发送 · Shift+Enter 换行",
   "ai.send": "发送",
   "ai.thinking": "正在思考…",
+  "ai.elapsed": "用时 {n}",
   "ai.copy": "复制",
   "ai.copied": "已复制",
   "ai.insert": "插入到当前笔记",

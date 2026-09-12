@@ -1,6 +1,5 @@
 import {
   ArrowUp,
-  Bot,
   Check,
   ChevronDown,
   ChevronRight,
@@ -10,6 +9,7 @@ import {
   Heading1,
   Languages,
   ListTree,
+  Loader2,
   MessageSquarePlus,
   RotateCcw,
   Sparkles,
@@ -17,7 +17,6 @@ import {
   Trash2,
   TriangleAlert,
   WandSparkles,
-  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -101,9 +100,14 @@ export default function AiChatPanel({ className }: { className?: string }) {
   const [insertedId, setInsertedId] = useState<string | null>(null);
   const [insertAsNoteId, setInsertAsNoteId] = useState<string | null>(null);
   const [expandedReasoningIds, setExpandedReasoningIds] = useState<Set<string>>(new Set());
+  const [expandedStepsIds, setExpandedStepsIds] = useState<Set<string>>(new Set());
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   /** sessionId of the currently streaming reply; guards stale event callbacks. */
   const streamingSessionRef = useRef<string | null>(null);
+  /** Start time of the current request, for the elapsed timer. */
+  const requestStartRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const configured = isAiConfigured(settings.ai);
   const activeNote = useMemo(
@@ -200,6 +204,11 @@ export default function AiChatPanel({ className }: { className?: string }) {
     setDraft("");
     setIsSending(true);
     streamingSessionRef.current = sessionId;
+    requestStartRef.current = Date.now();
+    setElapsedSeconds(0);
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - requestStartRef.current) / 1000));
+    }, 500);
     const messageId = loadingMessage.id;
     const executedSteps: AgentRunStep[] = [];
     try {
@@ -280,6 +289,10 @@ export default function AiChatPanel({ className }: { className?: string }) {
     } finally {
       streamingSessionRef.current = null;
       setIsSending(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }
   };
 
@@ -393,6 +406,15 @@ export default function AiChatPanel({ className }: { className?: string }) {
 
   const toggleReasoning = (messageId: string) => {
     setExpandedReasoningIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  };
+
+  const toggleSteps = (messageId: string) => {
+    setExpandedStepsIds((current) => {
       const next = new Set(current);
       if (next.has(messageId)) next.delete(messageId);
       else next.add(messageId);
@@ -549,36 +571,48 @@ export default function AiChatPanel({ className }: { className?: string }) {
                         {message.role === "user" ? t("ai.you") : t("ai.assistant")}
                       </span>
                       {message.status === "loading" ? (
-                        <div className="ai-thinking-state" role="status">
-                          <span className="ai-typing" aria-label={t("ai.thinking")}>
-                            <i />
-                            <i />
-                            <i />
-                          </span>
-                          <span className="ai-thinking-label">
-                            {message.steps && message.steps.length > 0
-                              ? t("ai.executingState")
-                              : t("ai.thinkingState")}
-                          </span>
+                        <div className="ai-loading-block" role="status">
+                          {/* ── 状态条：环形动画 + 正在思考 + 用时计时 ── */}
+                          <div className="ai-status-bar">
+                            <Loader2 className="ai-status-spinner h-3.5 w-3.5" aria-hidden />
+                            <span className="ai-status-label">
+                              {message.steps && message.steps.length > 0
+                                ? t("ai.executingState")
+                                : t("ai.thinkingState")}
+                            </span>
+                            <span className="ai-status-timer">{t("ai.elapsed", { n: formatTimer(elapsedSeconds) })}</span>
+                          </div>
+                          {/* ── 执行过程折叠面板（实时） ── */}
                           {message.steps && message.steps.length > 0 && (
-                            <div className="ai-tool-steps is-live">
-                              <p className="ai-tool-steps-title">
-                                <Wrench className="h-3.5 w-3.5" aria-hidden />
-                                {t("ai.executeSteps")}
-                              </p>
-                              {message.steps.map((step, index) => (
-                                <div className="ai-tool-step" key={`${message.id}-live-${index}`}>
-                                  <span className="ai-tool-step-icon">
-                                    <Wrench className="h-3 w-3" aria-hidden />
-                                  </span>
-                                  <div className="ai-tool-step-body">
-                                    <p className="ai-tool-step-name">{toolStepLabel(step.tool)}</p>
-                                    <pre className="ai-tool-step-args">{step.args}</pre>
-                                  </div>
+                            <div className="ai-collapse-panel is-open">
+                              <div className="ai-collapse-header">
+                                <ChevronDown className="h-3 w-3" aria-hidden />
+                                <span>{t("ai.executeSteps")}</span>
+                              </div>
+                              <div className="ai-collapse-body">
+                                <div className="ai-step-list">
+                                  {message.steps.map((step, index) => (
+                                    <div className="ai-step-item" key={`${message.id}-live-${index}`}>
+                                      <span className="ai-step-name">{toolStepLabel(step.tool)}</span>
+                                      <span className="ai-step-time">{step.elapsedMs ? formatElapsed(step.elapsedMs) : "…"}</span>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
+                              </div>
                             </div>
                           )}
+                          {/* ── 思考过程折叠面板（实时） ── */}
+                          <div className="ai-collapse-panel is-open">
+                            <div className="ai-collapse-header">
+                              <ChevronDown className="h-3 w-3" aria-hidden />
+                              <span>{t("ai.reasoningTitle")}</span>
+                            </div>
+                            <div className="ai-collapse-body">
+                              <pre className="ai-reasoning-text">
+                                {message.reasoning || "…"}
+                              </pre>
+                            </div>
+                          </div>
                         </div>
                       ) : message.status === "error" ? (
                         <div className="ai-error">
@@ -605,45 +639,52 @@ export default function AiChatPanel({ className }: { className?: string }) {
                           }
                         >
                           {message.reasoning ? (
-                            <div className="ai-reasoning-block">
+                            <div className="ai-collapse-panel">
                               <button
-                                className="ai-reasoning-toggle"
+                                className="ai-collapse-header"
                                 onClick={() => toggleReasoning(message.id)}
                                 type="button"
                               >
                                 {expandedReasoningIds.has(message.id) ? (
-                                  <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                                  <ChevronDown className="h-3 w-3" aria-hidden />
                                 ) : (
-                                  <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                                  <ChevronRight className="h-3 w-3" aria-hidden />
                                 )}
-                                <Bot className="h-3.5 w-3.5" aria-hidden />
                                 <span>{t("ai.reasoningTitle")}</span>
                               </button>
                               {expandedReasoningIds.has(message.id) && (
-                                <pre className="ai-reasoning-body">{message.reasoning}</pre>
+                                <div className="ai-collapse-body">
+                                  <pre className="ai-reasoning-text">{message.reasoning}</pre>
+                                </div>
                               )}
                             </div>
                           ) : null}
                           {message.steps && message.steps.length > 0 && (
-                            <div className="ai-tool-steps">
-                              <p className="ai-tool-steps-title">
-                                <Wrench className="h-3.5 w-3.5" aria-hidden />
-                                {t("ai.executeSteps")}
-                              </p>
-                              {message.steps.map((step, index) => (
-                                <div className="ai-tool-step" key={`${message.id}-step-${index}`}>
-                                  <span className="ai-tool-step-icon">
-                                    <Wrench className="h-3 w-3" aria-hidden />
-                                  </span>
-                                  <div className="ai-tool-step-body">
-                                    <p className="ai-tool-step-name">{toolStepLabel(step.tool)}</p>
-                                    <pre className="ai-tool-step-args">{step.args}</pre>
-                                    {step.result && (
-                                      <p className="ai-tool-step-result">{step.result}</p>
-                                    )}
+                            <div className="ai-collapse-panel">
+                              <button
+                                className="ai-collapse-header"
+                                onClick={() => toggleSteps(message.id)}
+                                type="button"
+                              >
+                                {expandedStepsIds.has(message.id) ? (
+                                  <ChevronDown className="h-3 w-3" aria-hidden />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3" aria-hidden />
+                                )}
+                                <span>{t("ai.executeSteps")}</span>
+                              </button>
+                              {expandedStepsIds.has(message.id) && (
+                                <div className="ai-collapse-body">
+                                  <div className="ai-step-list">
+                                    {message.steps.map((step, index) => (
+                                      <div className="ai-step-item" key={`${message.id}-step-${index}`}>
+                                        <span className="ai-step-name">{toolStepLabel(step.tool)}</span>
+                                        <span className="ai-step-time">{step.elapsedMs ? formatElapsed(step.elapsedMs) : ""}</span>
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
-                              ))}
+                              )}
                             </div>
                           )}
                           <div
@@ -785,6 +826,17 @@ function QuickIcon({ kind }: { kind: QuickCommandIcon }) {
     default:
       return <Sparkles className="h-3.5 w-3.5" aria-hidden />;
   }
+}
+
+/** Format milliseconds as a human-readable duration, e.g. "0.3s" or "1.2s". */
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Format seconds as "Xs" for the status bar timer. */
+function formatTimer(seconds: number): string {
+  return `${seconds}s`;
 }
 
 /** Friendly Chinese label for an executed agent tool. */

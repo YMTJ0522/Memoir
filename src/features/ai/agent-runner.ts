@@ -35,6 +35,8 @@ export type AgentRunStep = {
   tool: string;
   args: string;
   result: string;
+  /** Elapsed time for this step in milliseconds. */
+  elapsedMs: number;
 };
 
 /** Callbacks for a running agent loop. */

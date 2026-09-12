@@ -127,6 +127,8 @@ export type AgentToolStep = {
   tool: string;
   args: string;
   result: string;
+  /** Elapsed time for this step in milliseconds. */
+  elapsedMs: number;
 };
 
 /** Runs one tool call in the frontend; returns a short Markdown string. */
@@ -143,6 +145,7 @@ export async function runAgentTool(
   }
 
   let summary = "";
+  const t0 = performance.now();
   switch (name) {
     case "search_notes": {
       summary = await searchNotes(String(parsed.query ?? ""), Number(parsed.limit) || 8);
@@ -173,10 +176,12 @@ export async function runAgentTool(
       summary = `未知工具：${name}`;
   }
 
+  const elapsedMs = Math.round(performance.now() - t0);
   onStep?.({
     tool: name,
     args: rawArguments || "{}",
     result: summary,
+    elapsedMs,
   });
   return summary;
 }

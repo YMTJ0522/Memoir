@@ -217,140 +217,129 @@
   background: color-mix(in srgb, var(--memoir-danger) 12%, transparent);
 }
 
-/* collapsible reasoning (thinking) block */
+/* ── loading block (status bar + collapsible panels) ──
+   Reference design: thin status bar with spinner + timer at top,
+   then collapsible "执行过程" and "思考过程" panels below. */
 
-.ai-reasoning-block {
-  margin-bottom: 8px;
-  padding: 6px 8px;
-  border: 1px dashed var(--memoir-border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--memoir-panel) 70%, transparent);
+.ai-loading-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.ai-reasoning-toggle {
+/* status bar: spinner + label + timer */
+
+.ai-status-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--memoir-border);
+  border-radius: 8px;
+}
+
+.ai-status-spinner {
+  color: var(--memoir-muted);
+  animation: ai-spin 1s linear infinite;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-status-label {
+  font-size: 12.5px;
+  color: var(--memoir-muted);
+}
+
+.ai-status-timer {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--memoir-muted);
+  white-space: nowrap;
+}
+
+/* collapsible panel (shared by 执行过程 and 思考过程) */
+
+.ai-collapse-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-collapse-header {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--memoir-muted);
   transition: color var(--memoir-motion-fast) var(--memoir-ease);
 }
 
-.ai-reasoning-toggle:hover {
+.ai-collapse-header:hover {
   color: var(--memoir-text);
 }
 
-.ai-reasoning-body {
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  border-radius: 7px;
-  max-height: 220px;
-  overflow-y: auto;
-  font-family: var(--memoir-mono-font);
-  font-size: 11.5px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--memoir-muted);
-  background: var(--memoir-canvas);
+.ai-collapse-header svg {
+  flex-shrink: 0;
+  transition: transform var(--memoir-motion-fast) var(--memoir-ease);
 }
 
-/* agent tool steps */
+.ai-collapse-body {
+  margin-top: 6px;
+  padding-left: 16px;
+  border-left: 1.5px solid color-mix(in srgb, var(--memoir-border) 70%, transparent);
+}
 
-.ai-tool-steps {
+/* step list inside 执行过程 */
+
+.ai-step-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 8px;
 }
 
-.ai-tool-steps-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 2px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--memoir-muted);
-}
-
-.ai-tool-step {
+.ai-step-item {
   display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  padding: 5px 8px;
-  border: 1px solid var(--memoir-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--memoir-panel) 72%, transparent);
-}
-
-.ai-tool-step-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  margin-top: 1px;
-  border-radius: 5px;
-  color: var(--memoir-accent);
-  background: color-mix(in srgb, var(--memoir-accent) 14%, transparent);
-}
-
-.ai-tool-step-body {
-  min-width: 0;
-  flex: 1;
-}
-
-.ai-tool-step-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--memoir-text);
-  word-break: break-word;
-}
-
-.ai-tool-step-args {
-  margin: 2px 0 0;
-  font-family: var(--memoir-mono-font);
-  font-size: 10.5px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
   line-height: 1.5;
+  color: var(--memoir-text);
+}
+
+.ai-step-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-step-time {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--memoir-muted);
+  white-space: nowrap;
+}
+
+/* reasoning text inside 思考过程 */
+
+.ai-reasoning-text {
+  margin: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: var(--memoir-mono-font);
+  font-size: 12.5px;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--memoir-muted);
+  color: var(--memoir-text);
 }
 
-.ai-tool-step-result {
-  margin: 3px 0 0;
-  font-size: 11px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--memoir-muted);
-  border-left: 2px solid color-mix(in srgb, var(--memoir-accent) 45%, transparent);
-  padding-left: 6px;
-}
 
-/* Live (streaming) tool steps — the in-progress run pulses the accent. */
-.ai-thinking-state .ai-tool-steps.is-live {
-  margin-top: 6px;
-}
-
-.ai-tool-steps.is-live .ai-tool-step-icon {
-  color: var(--memoir-accent-contrast, #fff);
-  background: var(--memoir-accent);
-  animation: ai-live-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes ai-live-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--memoir-accent) 38%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--memoir-accent) 0%, transparent);
-  }
-}
 
 /* quick command chips */
 
@@ -528,22 +517,7 @@
   padding: 0;
 }
 
-/* thinking / waiting state container */
 
-.ai-thinking-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid var(--memoir-border);
-  border-radius: 10px;
-  color: var(--memoir-muted);
-}
-
-.ai-thinking-label {
-  font-size: 12px;
-}
 
 /* assistant markdown content */
 
@@ -667,43 +641,7 @@
   color: var(--memoir-text);
 }
 
-/* loading dots */
 
-.ai-typing {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 18px;
-}
-
-.ai-typing i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--memoir-muted);
-  animation: ai-typing-bounce 1.1s infinite ease-in-out;
-}
-
-.ai-typing i:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.ai-typing i:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes ai-typing-bounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
-}
 
 /* error state */
 

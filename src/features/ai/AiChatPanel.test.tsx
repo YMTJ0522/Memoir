@@ -421,10 +421,13 @@ describe("AiChatPanel", () => {
     await userEvent.type(view.getByRole("textbox"), "分析一下");
     await userEvent.keyboard("{Enter}");
 
-    // 思考块标签出现，思考内容默认收起
+    // 等待最终回答出现（消息已完成，不再处于 loading 状态）
     await waitFor(() => {
-      expect(view.getByText("思考过程")).toBeInTheDocument();
+      expect(view.getByText("最终回答")).toBeInTheDocument();
     });
+
+    // 完成后的消息中，「思考过程」折叠面板默认收起，内容不可见
+    expect(view.getByRole("button", { name: "思考过程" })).toBeInTheDocument();
     expect(view.queryByText("第一步思考")).not.toBeInTheDocument();
 
     // 展开后能看到完整思考过程（流式逐字拼接，整体呈现）
@@ -459,9 +462,9 @@ describe("AiChatPanel", () => {
     await waitFor(() => {
       expect(view.getByText(/根据搜索结果整理的最终回答/)).toBeInTheDocument();
     });
-    // 步骤条显示工具名与参数
+    // 步骤面板默认折叠，点击展开后显示工具名与耗时
+    await userEvent.click(view.getByRole("button", { name: "执行过程" }));
     expect(view.getByText("搜索笔记")).toBeInTheDocument();
-    expect(view.getByText('{"query":"预算"}')).toBeInTheDocument();
     // 第二轮请求携带了 tool 消息
     const lastCall = gateways.ai.chatCalls.at(-1);
     expect(lastCall?.messages.some((m) => m.role === "tool")).toBe(true);

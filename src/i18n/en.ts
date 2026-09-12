@@ -556,6 +556,7 @@ export const en = {
   "ai.enterHint": "Enter to send · Shift+Enter for a new line",
   "ai.send": "Send",
   "ai.thinking": "Thinking…",
+  "ai.elapsed": "{n} elapsed",
   "ai.copy": "Copy",
   "ai.copied": "Copied",
   "ai.insert": "Insert into current note",
