@@ -4,11 +4,11 @@
   position: relative;
 }
 
-/* session picker (header dropdown, compact) */
+/* session picker (toolbar dropdown, full-width) */
 
 .ai-session-picker {
-  flex: 0 0 auto;
-  max-width: 140px;
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 
 .ai-session-picker .memoir-select-field {
@@ -24,6 +24,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* toolbar (session management row) */
+
+.ai-toolbar {
+  background: var(--memoir-panel);
 }
 
 /* note picker in the context bar */

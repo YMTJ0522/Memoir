@@ -403,8 +403,9 @@ export default function AiChatPanel({ className }: { className?: string }) {
   return (
     <section aria-label={t("ai.panelTitle")} className={cn("memoir-panel-in", className)}>
       <div className="ai-chat-panel flex h-full min-h-0 flex-col bg-canvas">
+        {/* ── 品牌头部 ── 极简：图标 + 标题 + 关闭 */}
         <header
-          className="ai-panel-header flex h-12 shrink-0 items-center gap-2 border-b border-border pl-3 pr-2"
+          className="ai-panel-header flex h-11 shrink-0 items-center gap-2 border-b border-border pl-3 pr-2"
           data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
           onMouseDown={handleWindowDragMouseDown}
         >
@@ -421,36 +422,11 @@ export default function AiChatPanel({ className }: { className?: string }) {
                 : t("ai.headerSubtitleFree")}
             </p>
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            <Select
-              className="ai-session-picker mr-1 min-w-0"
-              label={t("ai.sessionSelect")}
-              onChange={handleSessionSelect}
-              options={sessionOptions}
-              value={activeAiSessionId ?? NEW_SESSION_VALUE}
-            />
-            {activeSession && aiSessions.length > 0 && (
-              <Tooltip label={t("ai.sessionDelete")}>
-                <IconButton
-                  className="h-7 w-7"
-                  label={t("ai.sessionDelete")}
-                  onClick={() => handleDeleteSession(activeSession)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </IconButton>
-              </Tooltip>
-            )}
-            <Tooltip label={t("ai.newChat")}>
-              <IconButton className="h-7 w-7" label={t("ai.newChat")} onClick={startNewChat}>
-                <MessageSquarePlus className="h-4 w-4" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip label={t("ai.closePanel")}>
-              <IconButton className="h-7 w-7" label={t("ai.closePanel")} onClick={closePanel}>
-                <X className="h-4 w-4" />
-              </IconButton>
-            </Tooltip>
-          </div>
+          <Tooltip label={t("ai.closePanel")}>
+            <IconButton className="h-7 w-7" label={t("ai.closePanel")} onClick={closePanel}>
+              <X className="h-4 w-4" />
+            </IconButton>
+          </Tooltip>
         </header>
 
         {!configured ? (
@@ -469,6 +445,34 @@ export default function AiChatPanel({ className }: { className?: string }) {
           </div>
         ) : (
           <>
+            {/* ── 工具条：会话管理 ── 选择器 + 新建 + 删除 */}
+            <div className="ai-toolbar flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-3">
+              <Select
+                className="ai-session-picker min-w-0 flex-1"
+                label={t("ai.sessionSelect")}
+                onChange={handleSessionSelect}
+                options={sessionOptions}
+                value={activeAiSessionId ?? NEW_SESSION_VALUE}
+              />
+              <Tooltip label={t("ai.newChat")}>
+                <IconButton className="h-7 w-7 shrink-0" label={t("ai.newChat")} onClick={startNewChat}>
+                  <MessageSquarePlus className="h-4 w-4" />
+                </IconButton>
+              </Tooltip>
+              {activeSession && aiSessions.length > 0 && (
+                <Tooltip label={t("ai.sessionDelete")}>
+                  <IconButton
+                    className="h-7 w-7 shrink-0"
+                    label={t("ai.sessionDelete")}
+                    onClick={() => handleDeleteSession(activeSession)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </div>
+
+            {/* ── 上下文条：笔记引用开关 + 笔记选择 chip */}
             <div className="ai-context-bar flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
               <Toggle
                 checked={useNoteContext}
