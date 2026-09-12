@@ -1,3 +1,5 @@
+import { resolveThemeColor } from "../shared/resolve-css-color";
+
 export function mermaidSourceKey(code: string) {
   return code;
 }
@@ -11,14 +13,18 @@ let idSeq = 0;
 
 /** Resolve whether the app is currently in dark mode (mermaid theme name). */
 function currentMermaidTheme(): "dark" | "default" {
-  return readVar("--memoir-appearance", "light").trim() === "dark" ? "dark" : "default";
+  if (typeof document === "undefined") return "default";
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "default";
 }
 
-/** Read a CSS custom property from :root, with a fallback. */
-function readVar(name: string, fallback: string): string {
-  if (typeof document === "undefined") return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
+/**
+ * Read a token and resolve it to a concrete hex string. In dark mode with a
+ * non-ink accent, `--memoir-accent-soft` is a `color-mix(...)` expression that
+ * mermaid's colour parser rejects, so we resolve it via the DOM before passing
+ * it to mermaid's themeVariables.
+ */
+function readVarHex(name: string, fallback: string): string {
+  return resolveThemeColor(name, fallback);
 }
 
 /** Build a complete set of mermaid themeVariables that matches the current
@@ -31,13 +37,13 @@ function readVar(name: string, fallback: string): string {
  *  dark used a fully-overridden `dark` theme. */
 function memoirThemeVariables(): Record<string, string> {
   const dark = currentMermaidTheme() === "dark";
-  const accent = readVar("--memoir-accent", dark ? "#efede7" : "#343532");
-  const accentSoft = readVar("--memoir-accent-soft", dark ? "#393832" : "#e7e5df");
-  const text = readVar("--memoir-text", dark ? "#f0eee8" : "#292a27");
-  const muted = readVar("--memoir-muted", dark ? "#a5a198" : "#8c8982");
-  const elevated = readVar("--memoir-elevated", dark ? "#24241f" : "#fffefb");
-  const panel = readVar("--memoir-panel", dark ? "#1d1d1a" : "#f5f3ee");
-  const border = readVar("--memoir-border", dark ? "#37362f" : "#e7e3db");
+  const accent = readVarHex("--memoir-accent", dark ? "#efede7" : "#343532");
+  const accentSoft = readVarHex("--memoir-accent-soft", dark ? "#393832" : "#e7e5df");
+  const text = readVarHex("--memoir-text", dark ? "#f0eee8" : "#292a27");
+  const muted = readVarHex("--memoir-muted", dark ? "#a5a198" : "#8c8982");
+  const elevated = readVarHex("--memoir-elevated", dark ? "#24241f" : "#fffefb");
+  const panel = readVarHex("--memoir-panel", dark ? "#1d1d1a" : "#f5f3ee");
+  const border = readVarHex("--memoir-border", dark ? "#37362f" : "#e7e3db");
 
   return {
     fontSize: "14px",
@@ -57,7 +63,7 @@ function memoirThemeVariables(): Record<string, string> {
     titleColor: text,
     edgeLabelBackground: elevated,
     labelBoxBkgColor: accentSoft,
-    // DeepSeek-style accent fill for active nodes
+    // accent fill for active nodes
     activeTaskBorderColor: accent,
     doneTaskBorderColor: accent,
     critBorderColor: "#c94c41",
@@ -65,7 +71,10 @@ function memoirThemeVariables(): Record<string, string> {
 }
 
 function themeSignature(): string {
-  return `${currentMermaidTheme()}::${readVar("--memoir-accent", "")}::${readVar("--memoir-accent-soft", "")}`;
+  return `${currentMermaidTheme()}::${readVarHex("--memoir-accent", "")}::${readVarHex(
+    "--memoir-accent-soft",
+    "",
+  )}`;
 }
 
 function cacheKey(code: string) {

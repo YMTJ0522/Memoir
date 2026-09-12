@@ -18,6 +18,17 @@ export type MindHeading = {
 const HEADING_RE = /^(#{1,6})\s+(.+)$/;
 
 /**
+ * Unescape common Markdown punctuation backslash escapes (`\.`, `\(`, `\[`,
+ * `\*`, `\_`, `\-`, …) so headings that were written escaped (e.g. a literal
+ * `7\.5` produced by an LLM) display cleanly in the mind map instead of
+ * showing the raw backslash. Only affects the display text; the original line
+ * is untouched, so editing still rewrites the exact heading line.
+ */
+function unescapeHeadingText(text: string): string {
+  return text.replace(/\\([\\`*_[\]()#+\-.!>])/g, "$1");
+}
+
+/**
  * Extract heading lines from raw Markdown, skipping fenced code blocks and
  * empty/cleanup of inline markers. Mirrors `extractHeadings` but keeps the
  * original line number of each heading.
@@ -37,7 +48,7 @@ export function extractMindHeadings(content: string): MindHeading[] {
 
     const match = HEADING_RE.exec(line);
     if (!match) continue;
-    const text = match[2].replace(/[#`*_~]/g, "").trim();
+    const text = unescapeHeadingText(match[2].replace(/[#`*_~]/g, "")).trim();
     if (!text) continue;
     headings.push({ depth: match[1].length, text, line: index });
   }

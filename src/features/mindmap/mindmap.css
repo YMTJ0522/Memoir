@@ -30,9 +30,3 @@
 .mindmap-stage .markmap-node > foreignObject .markmap-foreign > div > div {
   color: var(--memoir-text);
 }
-
-/* In dark mode the accent token becomes near-white; links in that tone are too
-   harsh. Blend the accent with muted so connectors stay visible but calm. */
-[data-theme="dark"] .mindmap-stage .markmap-link {
-  stroke: color-mix(in srgb, var(--memoir-accent) 65%, var(--memoir-muted));
-}

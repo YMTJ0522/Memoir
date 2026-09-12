@@ -259,6 +259,16 @@
   margin-bottom: 8px;
 }
 
+.ai-tool-steps-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--memoir-muted);
+}
+
 .ai-tool-step {
   display: flex;
   align-items: flex-start;
@@ -347,24 +357,114 @@
   cursor: not-allowed;
 }
 
+/* panel header (brand icon + title + actions) */
+
+.ai-panel-header {
+  background: var(--memoir-panel);
+}
+
+.ai-brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  color: var(--memoir-accent);
+  background: color-mix(in srgb, var(--memoir-accent) 14%, transparent);
+}
+
+.ai-brand-text {
+  flex: 1 1 auto;
+}
+
+/* context bar (toggle + context chip + session picker) */
+
+.ai-context-bar {
+  background: var(--memoir-panel);
+}
+
+.ai-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 180px;
+  min-width: 0;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--memoir-text);
+  background: color-mix(in srgb, var(--memoir-accent) 14%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-context-chip svg {
+  flex-shrink: 0;
+  color: var(--memoir-accent);
+}
+
+.ai-context-chip.is-free {
+  color: var(--memoir-muted);
+  background: color-mix(in srgb, var(--memoir-muted) 12%, transparent);
+}
+
+.ai-context-chip.is-free svg {
+  color: var(--memoir-muted);
+}
+
+/* note-context selector rendered as a chip (keeps the reference look while
+   preserving the "switch referenced note" capability) */
+.ai-context-chip-select .memoir-select-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  min-width: 0;
+  height: 26px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--memoir-text);
+  background: color-mix(in srgb, var(--memoir-accent) 14%, transparent);
+}
+
+.ai-context-chip-select .memoir-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* messages */
 
 .ai-chat-messages {
   background: var(--memoir-canvas);
 }
 
-.ai-bubble {
-  max-width: 92%;
-}
-
-.ai-bubble-row {
+.ai-msg-row {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
 }
 
-.ai-bubble-row.is-user {
+.ai-msg-row.is-user {
   align-items: flex-end;
+}
+
+.ai-msg-author {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--memoir-muted);
+  user-select: none;
+}
+
+.ai-msg-row.is-user .ai-msg-author {
+  order: -1;
 }
 
 .ai-bubble {
@@ -382,10 +482,29 @@
   border-bottom-right-radius: 4px;
 }
 
+/* assistant content is laid out flat (no chat bubble), matching the
+   reference AI-assistant layout */
 .ai-bubble.is-assistant {
-  background: var(--memoir-elevated);
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* thinking / waiting state container */
+
+.ai-thinking-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
   border: 1px solid var(--memoir-border);
-  border-bottom-left-radius: 4px;
+  border-radius: 10px;
+  color: var(--memoir-muted);
+}
+
+.ai-thinking-label {
+  font-size: 12px;
 }
 
 /* assistant markdown content */

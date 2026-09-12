@@ -52,6 +52,16 @@ describe("extractMindHeadings", () => {
       { depth: 2, text: "你好 code" },
     ]);
   });
+
+  it("unescapes backslash-escaped punctuation in headings", () => {
+    const content = "# 7\\.5 小节\n\n## Linux\\(入门\\)\n\n### 1\\.1 什么是 Linux\n";
+    const headings = extractMindHeadings(content);
+    expect(headings.map((h) => h.text)).toEqual([
+      "7.5 小节",
+      "Linux(入门)",
+      "1.1 什么是 Linux",
+    ]);
+  });
 });
 
 describe("headingsToMarkdown", () => {

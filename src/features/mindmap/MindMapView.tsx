@@ -29,6 +29,7 @@ import { handleWindowDragMouseDown } from "../window/window-drag";
 import { extractMindHeadings, type MindHeading } from "./mindmap-editing";
 import { applyHeadingEdit } from "./mindmap-editing";
 import { exportMindmap } from "./export-mindmap";
+import { mixColors } from "../shared/resolve-css-color";
 
 type MindNode = {
   content: string;
@@ -82,6 +83,20 @@ function themeColors() {
   };
 }
 
+/**
+ * Resolve the connector colour for markmap. The colour callback runs inside
+ * markmap's d3 transition machinery: it must return a concrete colour that d3
+ * can interpolate — a `color-mix(...)` string (used by the dark-mode accent
+ * tokens) crashes the transition and produces the gradient artefact.
+ */
+function linkColor() {
+  const tc = themeColors();
+  if (!tc.dark) return tc.accent;
+  // Blend accent toward muted so connectors stay visible but calm (mirrors the
+  // removed CSS rule in mindmap.css).
+  return mixColors(tc.accent, tc.muted, 0.65);
+}
+
 export default function MindMapView({ className }: { className?: string }) {
   const activePath = useAppStore((state) => state.activePath);
   const content = useAppStore((state) => state.content);
@@ -129,12 +144,7 @@ const hostRef = useRef<SVGSVGElement>(null);
         maxWidth: 280,
         paddingX: 14,
         spacingVertical: 6,
-        color: () => {
-            const tc = themeColors();
-            return tc.dark
-              ? `color-mix(in srgb, ${tc.accent} 65%, ${tc.muted})`
-              : tc.accent;
-          },
+        color: linkColor,
         lineWidth: () => 1.5,
       });
       markmapRef.current = mm;
@@ -161,21 +171,16 @@ const hostRef = useRef<SVGSVGElement>(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree]);
 
-  // Watch theme changes and refresh colors.
+  // Watch theme/accent changes and re-render with the new connector colour.
+  // `setOptions` alone does not re-apply the stroke attribute (only `renderData`
+  // does), so we run a full re-render to keep every connector in one colour.
   const appearance = useAppStore((state) => state.settings.appearance);
   useEffect(() => {
     const mm = markmapRef.current;
     if (!mm) return;
-    mm.setOptions({
-      color: () => {
-        const tc = themeColors();
-        return tc.dark
-          ? `color-mix(in srgb, ${tc.accent} 65%, ${tc.muted})`
-          : tc.accent;
-      },
-    });
-    mm.updateStyle();
-  }, [appearance]);
+    mm.setOptions({ color: linkColor });
+    void rerender(mm, 4);
+  }, [appearance, appearance.accent]);
 
   const commitEdit = (node: MindNode, command: Parameters<typeof applyHeadingEdit>[1]) => {
     if (!activePath || !node.payload) return;
