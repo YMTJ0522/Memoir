@@ -533,6 +533,7 @@ export const zh = {
   "ai.headerSubtitle": "正在处理整篇笔记",
   "ai.headerSubtitleFree": "自由对话模式",
   "ai.thinkingState": "正在思考",
+  "ai.executingState": "正在执行…",
   "ai.executeSteps": "执行过程",
   "ai.reasoningTitle": "思考过程",
   "ai.setupTitle": "AI 编写尚未配置",

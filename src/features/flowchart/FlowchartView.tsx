@@ -27,10 +27,9 @@ const FIT_PADDING = 64;
 type Viewport = { x: number; y: number; scale: number };
 
 /** Fit the rendered diagram into the stage (with padding), centered. */
-function fitViewport(host: HTMLElement): Viewport {
-  const diagram = host.querySelector<SVGSVGElement>(".flowchart-diagram");
-  const stage = host.querySelector<HTMLElement>(".flowchart-stage");
-  if (!diagram || !stage) return { x: 0, y: 0, scale: 1 };
+function fitViewport(stage: HTMLElement): Viewport {
+  const diagram = stage.querySelector<SVGSVGElement>(".flowchart-diagram");
+  if (!diagram) return { x: 0, y: 0, scale: 1 };
   const box = diagram.getBoundingClientRect();
   const area = stage.getBoundingClientRect();
   const contentWidth = box.width || 1;

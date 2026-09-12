@@ -121,13 +121,25 @@ const hostRef = useRef<SVGSVGElement>(null);
   treeRef.current = tree;
 
   /** Set the tree then fit once the layout is committed, so the first view is
-   *  centered instead of showing whatever pan offset markmap starts with. */
+   *  centered instead of showing whatever pan offset markmap starts with.
+   *
+   *  markmap's setData runs `_relayout()` on the next frame and the node
+   *  transforms animate over `duration` ms. Fitting while the animation is
+   *  still running measures a half-updated `state.rect`, which lands the map in
+   *  the top-left corner. We temporarily set duration=0 so the layout is
+   *  committed synchronously, fit, then restore the animated duration. */
   const rerender = async (mm: MarkmapInstance, level: number) => {
-    await mm.setData(treeRef.current, { initialExpandLevel: level });
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
-    await mm.fit(1.6);
+    const previousDuration = mm.options?.duration ?? 300;
+    mm.setOptions({ duration: 0 });
+    try {
+      await mm.setData(treeRef.current, { initialExpandLevel: level });
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      await mm.fit(1.6);
+    } finally {
+      mm.setOptions({ duration: previousDuration });
+    }
   };
 
   // Initialize markmap once on mount.

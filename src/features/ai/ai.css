@@ -325,6 +325,27 @@
   padding-left: 6px;
 }
 
+/* Live (streaming) tool steps — the in-progress run pulses the accent. */
+.ai-thinking-state .ai-tool-steps.is-live {
+  margin-top: 6px;
+}
+
+.ai-tool-steps.is-live .ai-tool-step-icon {
+  color: var(--memoir-accent-contrast, #fff);
+  background: var(--memoir-accent);
+  animation: ai-live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ai-live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--memoir-accent) 38%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--memoir-accent) 0%, transparent);
+  }
+}
+
 /* quick command chips */
 
 .ai-quick-commands {
@@ -367,12 +388,23 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
-  border-radius: 9px;
-  color: var(--memoir-accent);
-  background: color-mix(in srgb, var(--memoir-accent) 14%, transparent);
+  border-radius: 10px;
+  color: var(--memoir-accent-contrast, #fff);
+  background: linear-gradient(
+    135deg,
+    var(--memoir-accent),
+    color-mix(in srgb, var(--memoir-accent) 68%, var(--memoir-muted))
+  );
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--memoir-accent) 28%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--memoir-accent-contrast, #fff) 18%, transparent);
+}
+
+.ai-brand-icon svg {
+  filter: drop-shadow(0 0.5px 0 color-mix(in srgb, var(--memoir-accent) 20%, transparent));
 }
 
 .ai-brand-text {

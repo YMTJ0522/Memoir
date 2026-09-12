@@ -227,6 +227,19 @@ export default function AiChatPanel({ className }: { className?: string }) {
           },
           onStep: (step) => {
             executedSteps.push(step);
+            // Live-update the loading message so the user can watch the agent
+            // progress (thinking → executing tools → generating) in real time.
+            if (streamingSessionRef.current !== sessionId) return;
+            const live = useAppStore.getState();
+            const liveSession = live.aiSessions.find((item) => item.id === sessionId);
+            if (!liveSession) return;
+            updateAiSession(sessionId, {
+              messages: liveSession.messages.map((item) =>
+                item.id === messageId
+                  ? { ...item, steps: [...(item.steps ?? []), step] }
+                  : item,
+              ),
+            });
           },
         },
       });
@@ -538,7 +551,30 @@ export default function AiChatPanel({ className }: { className?: string }) {
                             <i />
                             <i />
                           </span>
-                          <span className="ai-thinking-label">{t("ai.thinkingState")}</span>
+                          <span className="ai-thinking-label">
+                            {message.steps && message.steps.length > 0
+                              ? t("ai.executingState")
+                              : t("ai.thinkingState")}
+                          </span>
+                          {message.steps && message.steps.length > 0 && (
+                            <div className="ai-tool-steps is-live">
+                              <p className="ai-tool-steps-title">
+                                <Wrench className="h-3.5 w-3.5" aria-hidden />
+                                {t("ai.executeSteps")}
+                              </p>
+                              {message.steps.map((step, index) => (
+                                <div className="ai-tool-step" key={`${message.id}-live-${index}`}>
+                                  <span className="ai-tool-step-icon">
+                                    <Wrench className="h-3 w-3" aria-hidden />
+                                  </span>
+                                  <div className="ai-tool-step-body">
+                                    <p className="ai-tool-step-name">{toolStepLabel(step.tool)}</p>
+                                    <pre className="ai-tool-step-args">{step.args}</pre>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ) : message.status === "error" ? (
                         <div className="ai-error">

@@ -536,6 +536,7 @@ export const en = {
   "ai.headerSubtitle": "Processing the full note",
   "ai.headerSubtitleFree": "Free chat mode",
   "ai.thinkingState": "Thinking",
+  "ai.executingState": "Executing…",
   "ai.executeSteps": "Executed steps",
   "ai.reasoningTitle": "Thinking",
   "ai.setupTitle": "AI writing is not configured",
