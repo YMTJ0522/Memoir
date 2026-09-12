@@ -601,7 +601,7 @@ export default function AiChatPanel({ className }: { className?: string }) {
                               </div>
                             </div>
                           )}
-                          {/* ── 思考过程折叠面板（实时，仅在有内容时显示） ── */}
+                          {/* ── 思考过程折叠面板（实时流式显示） ── */}
                           {message.reasoning && (
                             <div className="ai-collapse-panel is-open">
                               <div className="ai-collapse-header">

@@ -153,6 +153,11 @@ struct ChatRequest {
     /// Ask OpenAI-compatible endpoints for SSE streaming. Doubao / DeepSeek /
     /// Kimi / OpenAI all honor this; the non-stream call stays as fallback.
     stream: bool,
+    /// Ask reasoning-capable models (DeepSeek V3.1+ / V4, Doubao thinking
+    /// models) to emit a thinking trace via `reasoning_content`. Endpoints
+    /// that do not know this field simply ignore it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<serde_json::Value>,
 }
 
 impl ChatRequest {
@@ -164,6 +169,13 @@ impl ChatRequest {
             tools: input.tools.as_ref().map(|tools| snake_case_tools(tools)),
             tool_choice: input.tool_choice.clone(),
             stream,
+            // Only the streaming path benefits from a thinking trace; the
+            // non-streaming call is a plain connectivity probe.
+            thinking: if stream {
+                Some(serde_json::json!({ "type": "enabled" }))
+            } else {
+                None
+            },
         }
     }
 }

@@ -610,7 +610,7 @@
 
 [data-body-font="serif"] .editor-pane .cm-scroller,
 [data-body-font="serif"] .editor-pane .cm-content {
-  font-family: ui-serif, "Songti SC", STSong, Georgia, serif;
+  font-family: "Nanxi Round", ui-serif, "Songti SC", STSong, Georgia, serif;
 }
 
 .editor-pane.is-file-drop {

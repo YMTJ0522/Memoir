@@ -1,7 +1,7 @@
 .sidebar-nav-item,
 .sidebar-section-title,
 .sidebar-footer {
-  font-family: "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-family: "Nanxi Round", "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
 }
 
@@ -239,7 +239,7 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--memoir-elevated) 42%, var(--memoir-panel));
   color: var(--memoir-text);
-  font-family: "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-family: "Nanxi Round", "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   font-size: 12px;
   font-weight: 450;
   letter-spacing: -0.01em;
@@ -274,7 +274,7 @@
 }
 
 .outline-list {
-  font-family: "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-family: "Nanxi Round", "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
   overflow-anchor: none;
   overscroll-behavior: contain;
@@ -578,7 +578,7 @@
 }
 
 .index-inspector {
-  font-family: "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-family: "Nanxi Round", "SF Pro Text", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
 }
 
