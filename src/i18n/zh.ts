@@ -78,6 +78,8 @@ export const zh = {
   "library.sortAsc": "升序",
   "library.sortDesc": "降序",
   "library.noMatches": "没有匹配的笔记。",
+  "library.noFavorites": "还没有收藏的笔记。",
+  "library.noFavoritesHint": "在笔记列表中右键点击笔记，选择「收藏」即可将其加入收藏。",
   "library.rootFolder": "根目录",
   "library.attachments": "附件",
   "library.importAttachment": "导入图片 / 视频",

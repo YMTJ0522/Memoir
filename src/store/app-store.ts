@@ -398,9 +398,9 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         folderAppearances: folderAppearancesForWorkspace(appState.folderAppearances, root),
         isLoading: false,
         status: tc(storeLocale(get().settings), "status.noteCount", page.stats.total),
-        ...(selectIfNeeded ? { activePath: selected } : {}),
+        activePath: selected,
       });
-      if (selectIfNeeded && selected && !alreadyOpen) await get().selectNote(selected);
+      if (selected && !alreadyOpen) await get().selectNote(selected);
     };
 
     const runLibraryQuery = async () => {

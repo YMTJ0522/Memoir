@@ -66,6 +66,7 @@ export function NoteList({
 }) {
   const notes = useAppStore((state) => state.notes);
   const activePath = useAppStore((state) => state.activePath);
+  const navFilter = useAppStore((state) => state.navFilter);
   const mode = useAppStore((state) => state.libraryPanelMode);
   const content = useAppStore((state) => (state.libraryPanelMode === "outline" ? state.content : ""));
   const query = useAppStore((state) => state.query);
@@ -104,9 +105,9 @@ export function NoteList({
   const activeNote = notes.find((note) => note.relativePath === activePath);
   const untitled = t("editor.untitledFallback");
   const headings = useMemo(() => {
-    if (mode !== "outline") return [];
+    if (mode !== "outline" || !activeNote) return [];
     return extractHeadings(parseNote(content, activeNote?.fileName || untitled).body);
-  }, [activeNote?.fileName, content, mode, untitled]);
+  }, [activeNote, content, mode, untitled]);
 
   return (
     <section
@@ -243,9 +244,17 @@ export function NoteList({
             onOpenMenu={setMenuTarget}
             onSelect={(path) => void selectNote(path)}
           />
-          {!filteredNotes.length && (
+          {!filteredNotes.length && navFilter === "favorites" ? (
+            <div className="grid place-items-center px-4 py-10 text-center">
+              <Star className="mb-2 h-5 w-5 text-muted" />
+              <p className="text-xs font-medium text-text">{t("library.noFavorites")}</p>
+              <p className="mt-1 max-w-[16rem] text-[11px] leading-5 text-muted">
+                {t("library.noFavoritesHint")}
+              </p>
+            </div>
+          ) : !filteredNotes.length ? (
             <p className="px-3 py-8 text-center text-xs text-muted">{t("library.noMatches")}</p>
-          )}
+          ) : null}
         </div>
       ) : mode === "links" ? (
         <NoteLinksPanel />

@@ -81,6 +81,8 @@ export const en = {
   "library.sortAsc": "Ascending",
   "library.sortDesc": "Descending",
   "library.noMatches": "No matching notes.",
+  "library.noFavorites": "No favorite notes yet.",
+  "library.noFavoritesHint": "Right-click a note in the list and choose \"Favorite\" to add it here.",
   "library.rootFolder": "Root",
   "library.attachments": "Files",
   "library.importAttachment": "Import image / video",
