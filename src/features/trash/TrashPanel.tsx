@@ -153,7 +153,7 @@ export function TrashPanel() {
       )}
 
       {confirmEmpty && (
-        <div className="absolute inset-0 z-10 grid place-items-center bg-background/60 p-4">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-4">
           <div className="w-full max-w-xs rounded-xl border border-border bg-panel p-4 shadow-lg">
             <h3 className="text-[13px] font-semibold text-text">{t("trash.emptyTitle")}</h3>
             <p className="mt-1 text-[11px] leading-relaxed text-muted">{t("trash.emptyConfirm")}</p>

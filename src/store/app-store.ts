@@ -613,6 +613,22 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
           ]);
           set({ attachments, trash });
           await applyLibraryPage(root, page, preferredPath);
+          // Auto-create demo note for empty workspaces
+          if (page.notes.length === 0) {
+            const { DEMO_NOTE_CONTENT, DEMO_NOTE_PATH } = await import("../domain/demo-notes");
+            try {
+              await gateways.workspace.createNote({
+                root,
+                title: "Memoir 功能演示",
+                extension: "md",
+              });
+              await gateways.workspace.writeNote(root, DEMO_NOTE_PATH, DEMO_NOTE_CONTENT);
+              const refreshed = await gateways.workspace.reconcileWorkspace(root, currentQuery());
+              await applyLibraryPage(root, refreshed, DEMO_NOTE_PATH);
+            } catch {
+              // Demo note creation is best-effort
+            }
+          }
         } catch (error) {
           set({
             isLoading: false,
