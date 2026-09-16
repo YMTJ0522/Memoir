@@ -3,7 +3,7 @@ name = "memoir"
 # App, installer, and GitHub release tag all use this field.
 version = "0.1.13"
 description = "A quiet desktop notebook for Markdown and MDX"
-authors = ["you"]
+authors = ["YMTJ0522"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

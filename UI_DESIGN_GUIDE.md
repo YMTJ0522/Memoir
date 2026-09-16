@@ -1,4 +1,4 @@
-# Memoir UI 设计系统规范
+﻿# Memoir UI 设计系统规范
 
 > 本文档完整描述 Memoir 笔记应用的 UI 风格，用于在其他项目中复刻相同的视觉效果。
 > 技术栈：React + TypeScript + Tailwind CSS v4 + CSS 变量主题系统

@@ -1,7 +1,7 @@
-export const GITHUB_REPO_URL = "https://github.com/Memoir-Studio/Memoir";
+export const GITHUB_REPO_URL = "https://github.com/YMTJ0522/Memoir";
 
 const GITHUB_HOST_PREFIX = "https://github.com/";
-const GITHUB_REPO_PATH = "Memoir-Studio/Memoir";
+const GITHUB_REPO_PATH = "YMTJ0522/Memoir";
 
 export type AppUpdateStatus = "upToDate" | "available" | "skipped";
 
