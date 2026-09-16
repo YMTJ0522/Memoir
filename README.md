@@ -5,6 +5,10 @@
 <h1 align="center">Memoir</h1>
 
 <p align="center">
+  <em>Forked and customized from <a href="https://github.com/Memoir-Studio/Memoir">Memoir-Studio/Memoir</a> (MIT License).</em>
+</p>
+
+<p align="center">
   <strong>A quiet desktop notebook.</strong><br />
   Open a folder. Write. Preview. Sync.<br />
   Markdown / MDX — still ordinary files, still yours.

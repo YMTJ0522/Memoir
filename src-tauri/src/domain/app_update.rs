@@ -1,12 +1,12 @@
 use serde::Serialize;
 
-pub const GITHUB_REPO_OWNER: &str = "Memoir-Studio";
+pub const GITHUB_REPO_OWNER: &str = "YMTJ0522";
 pub const GITHUB_REPO_NAME: &str = "Memoir";
-pub const GITHUB_REPO_URL: &str = "https://github.com/Memoir-Studio/Memoir";
+pub const GITHUB_REPO_URL: &str = "https://github.com/YMTJ0522/Memoir";
 pub const RELEASE_NOTES_MAX_CHARS: usize = 600;
 
 const GITHUB_HOST_PREFIX: &str = "https://github.com/";
-const GITHUB_REPO_PATH: &str = "Memoir-Studio/Memoir";
+const GITHUB_REPO_PATH: &str = "YMTJ0522/Memoir";
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -93,9 +93,9 @@ pub fn is_allowed_release_url(raw: &str) -> bool {
         return false;
     };
     rest == GITHUB_REPO_PATH
-        || rest.starts_with("Memoir-Studio/Memoir/")
-        || rest.starts_with("Memoir-Studio/Memoir?")
-        || rest.starts_with("Memoir-Studio/Memoir#")
+        || rest.starts_with("YMTJ0522/Memoir/")
+        || rest.starts_with("YMTJ0522/Memoir?")
+        || rest.starts_with("YMTJ0522/Memoir#")
 }
 
 pub fn fallback_release_url(canonical_version: &str) -> String {
@@ -195,17 +195,17 @@ mod tests {
     #[test]
     fn allowed_release_url_stays_on_this_repo() {
         assert!(is_allowed_release_url(
-            "https://github.com/Memoir-Studio/Memoir/releases/tag/v0.1.7"
+            "https://github.com/YMTJ0522/Memoir/releases/tag/v0.1.7"
         ));
         assert!(is_allowed_release_url(
-            "https://github.com/Memoir-Studio/Memoir"
+            "https://github.com/YMTJ0522/Memoir"
         ));
         assert!(!is_allowed_release_url(
-            "https://github.com/Memoir-Studio/Memoir-evil"
+            "https://github.com/YMTJ0522/Memoir-evil"
         ));
         assert!(!is_allowed_release_url("https://evil.example/releases"));
         assert!(!is_allowed_release_url(
-            "http://github.com/Memoir-Studio/Memoir"
+            "http://github.com/YMTJ0522/Memoir"
         ));
     }
 
@@ -215,21 +215,21 @@ mod tests {
             "0.1.6",
             None,
             "v0.1.7",
-            "https://github.com/Memoir-Studio/Memoir/releases/tag/v0.1.7",
+            "https://github.com/YMTJ0522/Memoir/releases/tag/v0.1.7",
             Some("notes"),
         );
         assert_eq!(available.status, AppUpdateStatus::Available);
         assert_eq!(available.latest_version.as_deref(), Some("0.1.7"));
         assert_eq!(
             available.release_url.as_deref(),
-            Some("https://github.com/Memoir-Studio/Memoir/releases/tag/v0.1.7")
+            Some("https://github.com/YMTJ0522/Memoir/releases/tag/v0.1.7")
         );
         assert_eq!(available.release_notes.as_deref(), Some("notes"));
 
         let fallback = build_update_check("0.1.6", None, "0.1.7", "https://evil.example/x", None);
         assert_eq!(
             fallback.release_url.as_deref(),
-            Some("https://github.com/Memoir-Studio/Memoir/releases/tag/v0.1.7")
+            Some("https://github.com/YMTJ0522/Memoir/releases/tag/v0.1.7")
         );
     }
 }

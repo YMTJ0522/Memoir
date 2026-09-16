@@ -5,6 +5,10 @@
 <h1 align="center">Memoir</h1>
 
 <p align="center">
+  <em>基于 <a href="https://github.com/Memoir-Studio/Memoir">Memoir-Studio/Memoir</a> 二改定制（MIT 协议）。</em>
+</p>
+
+<p align="center">
   <strong>把记忆写下来</strong><br />
   打开一个文件夹，写作、预览、同步。<br />
   Markdown / MDX，始终是普通文件，始终是你的。
