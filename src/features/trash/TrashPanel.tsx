@@ -1,6 +1,6 @@
 import { FileText, Image as ImageIcon, Paperclip, RotateCcw, Trash2, X } from "lucide-react";
 import { useState } from "react";
-import { Button, IconButton, cn } from "../../components/ui";
+import { AlertDialog, Button, IconButton, cn } from "../../components/ui";
 import { useAppStore } from "../../store/app-store";
 import { useI18n } from "../../i18n/react";
 import { formatRelativeTime } from "../../i18n";
@@ -152,33 +152,14 @@ export function TrashPanel() {
         </div>
       )}
 
-      {confirmEmpty && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-4">
-          <div className="w-full max-w-xs rounded-xl border border-border bg-panel p-4 shadow-lg">
-            <h3 className="text-[13px] font-semibold text-text">{t("trash.emptyTitle")}</h3>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted">{t("trash.emptyConfirm")}</p>
-            <div className="mt-3 flex items-center justify-end gap-2">
-              <Button
-                className="h-8 px-3 text-[12px]"
-                disabled={busy !== null}
-                onClick={() => setConfirmEmpty(false)}
-                variant="ghost"
-              >
-                {t("common.cancel")}
-              </Button>
-              <Button
-                className="h-8 gap-1.5 px-3 text-[12px]"
-                disabled={busy !== null}
-                onClick={() => void run("__empty__", () => emptyTrash())}
-                variant="danger"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t("trash.empty")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog
+        confirmLabel={t("trash.empty")}
+        description={t("trash.emptyConfirm")}
+        onClose={() => setConfirmEmpty(false)}
+        onConfirm={() => void run("__empty__", () => emptyTrash())}
+        open={confirmEmpty}
+        title={t("trash.emptyTitle")}
+      />
     </div>
   );
 }

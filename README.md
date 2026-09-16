@@ -30,7 +30,7 @@
 
 <p align="center">
   <img
-    src="docs/assets/hero.webp"
+    src="docs/assets/hero.png"
     alt="Memoir desktop app: library, Markdown editor, and live preview"
     width="960"
   />

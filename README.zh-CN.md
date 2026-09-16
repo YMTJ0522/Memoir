@@ -30,7 +30,7 @@
 
 <p align="center">
   <img
-    src="docs/assets/hero.webp"
+    src="docs/assets/hero.png"
     alt="Memoir 桌面端：资料库、Markdown 编辑器与实时预览"
     width="960"
   />
