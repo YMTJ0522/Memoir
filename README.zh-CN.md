@@ -5,7 +5,8 @@
 <h1 align="center">Memoir</h1>
 
 <p align="center">
-  <em>基于 <a href="https://github.com/Memoir-Studio/Memoir">Memoir-Studio/Memoir</a> 二改定制（MIT 协议）。</em>
+  <em>基于 <a href="https://github.com/Memoir-Studio/Memoir">Memoir-Studio/Memoir</a> 二改定制（MIT 协议）。</em><br />
+  <em>二改维护：<a href="https://github.com/YMTJ0522">YMTJ0522</a></em>
 </p>
 
 <p align="center">

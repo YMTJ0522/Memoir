@@ -5,7 +5,8 @@
 <h1 align="center">Memoir</h1>
 
 <p align="center">
-  <em>Forked and customized from <a href="https://github.com/Memoir-Studio/Memoir">Memoir-Studio/Memoir</a> (MIT License).</em>
+  <em>Forked and customized from <a href="https://github.com/Memoir-Studio/Memoir">Memoir-Studio/Memoir</a> (MIT License).</em><br />
+  <em>Maintained by <a href="https://github.com/YMTJ0522">YMTJ0522</a></em>
 </p>
 
 <p align="center">
