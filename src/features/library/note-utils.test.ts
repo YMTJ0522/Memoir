@@ -130,13 +130,13 @@ title: Two Sum
 
   it("extracts stable heading ids and word statistics", () => {
     expect(extractHeadings("# Hello\n## Hello\n### 世界")).toEqual([
-      { id: "hello", depth: 1, text: "Hello" },
-      { id: "hello-1", depth: 2, text: "Hello" },
-      { id: "世界", depth: 3, text: "世界" },
+      { id: "hello", depth: 1, text: "Hello", line: 1 },
+      { id: "hello-1", depth: 2, text: "Hello", line: 2 },
+      { id: "世界", depth: 3, text: "世界", line: 3 },
     ]);
     expect(extractHeadings("# Real\n```\n# Fake\n```\n## Also real")).toEqual([
-      { id: "real", depth: 1, text: "Real" },
-      { id: "also-real", depth: 2, text: "Also real" },
+      { id: "real", depth: 1, text: "Real", line: 1 },
+      { id: "also-real", depth: 2, text: "Also real", line: 5 },
     ]);
     expect(noteStats("Hello world 世界")).toEqual({
       words: 4,

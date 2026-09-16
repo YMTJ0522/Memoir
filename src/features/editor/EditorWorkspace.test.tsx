@@ -49,9 +49,14 @@ describe("EditorWorkspace PDF export", () => {
     );
 
     await user.click(view.getByRole("button", { name: "导出" }));
-    const pdfItem = view.getByRole("menuitem", { name: "导出 PDF" });
-    await user.click(pdfItem);
-    expect(exportNote).toHaveBeenCalledWith("alpha.md", "pdf");
+    // Export dialog opens with title "导出"
+    await view.findByRole("dialog", { name: "导出" });
+    // Click the confirm export button inside the dialog (second "导出" button)
+    const buttons = view.getAllByRole("button", { name: "导出" });
+    const dialogExportBtn = buttons.find((b) => b.closest('[role="dialog"]'));
+    expect(dialogExportBtn).toBeDefined();
+    await user.click(dialogExportBtn!);
+    expect(exportNote).toHaveBeenCalledWith("alpha.md", "pdf", expect.objectContaining({ format: "pdf" }));
   });
 
   it("invokes header delete and rename without passing the click event", async () => {

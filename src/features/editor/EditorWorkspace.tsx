@@ -91,9 +91,13 @@ import {
   type ScrollAnchor,
 } from "./scroll-sync";
 import { exportNote } from "../export/export-note";
+import { ExportDialog } from "../export/ExportDialog";
+import type { ExportOptions } from "../export/export-options";
 import type { ExportFormat } from "../../gateways/contracts";
+import { resolveLocale } from "../../i18n/locale";
 import { useNoteGraph } from "../graph/useNoteGraph";
 import { VersionsPanel } from "./VersionsPanel";
+import { countWords, formatWordCount } from "./word-count";
 
 const EditorPane = lazy(() => import("./EditorPane"));
 const PreviewPane = lazy(() => import("../preview/PreviewPane"));
@@ -146,6 +150,7 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
   const editorSplit = useAppStore((state) => state.layout.editorSplit);
   const setLayout = useAppStore((state) => state.setLayout);
   const isSaving = useAppStore((state) => state.isSaving);
+  const isLoading = useAppStore((state) => state.isLoading);
   const setContent = useAppStore((state) => state.setContent);
   const handleEditorChange = useCallback(
     (text: string) => {
@@ -165,6 +170,7 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
   const splitRef = useRef<HTMLDivElement>(null);
   const [splitWidth, setSplitWidth] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [nativeDropActive, setNativeDropActive] = useState(false);
   const [editorMenu, setEditorMenu] = useState<EditorMenuTarget | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
@@ -184,7 +190,9 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
   const { graph } = useNoteGraph();
   const untitled = t("editor.untitledFallback");
   const activeNote = notes.find((note) => note.relativePath === activePath) || null;
-  const hasDocument = Boolean(activeNote && loadedContentPath === activePath);
+  // During note switching, keep showing the previous content instead of flashing
+  // the "no note selected" empty state. isLoading means a new note is loading.
+  const hasDocument = Boolean(activeNote && (loadedContentPath === activePath || isLoading));
   const parsed = useMemo(
     () => parseNote(hasDocument ? content : "", activeNote?.fileName || untitled),
     [activeNote?.fileName, content, hasDocument, untitled],
@@ -401,11 +409,11 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
   }, [ensureEditorMounted, savePastedImages]);
 
   const exportActiveNote = useCallback(
-    async (format: ExportFormat) => {
+    async (format: ExportFormat, options?: Partial<ExportOptions>) => {
       if (!activePath || isExporting) return;
       setIsExporting(true);
       try {
-        await exportNote(activePath, format);
+        await exportNote(activePath, format, options);
       } finally {
         setIsExporting(false);
       }
@@ -677,14 +685,27 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
           </p>
         </div>
         <div className="flex items-center gap-1.5">
-          <span
-            aria-label={isSaving ? t("editor.saving") : isDirty ? t("editor.unsaved") : t("editor.saved")}
-            aria-live="polite"
-            className="save-state-dot mr-1"
-            data-state={isSaving ? "saving" : isDirty ? "dirty" : "saved"}
-            role="status"
-            title={isSaving ? t("editor.saving") : isDirty ? t("editor.unsaved") : t("editor.saved")}
-          />
+          <span className="save-state-group flex items-center gap-1.5">
+            <span
+              aria-label={isSaving ? t("editor.saving") : isDirty ? t("editor.unsaved") : t("editor.saved")}
+              aria-live="polite"
+              className="save-state-dot"
+              data-state={isSaving ? "saving" : isDirty ? "dirty" : "saved"}
+              role="status"
+              title={isSaving ? t("editor.saving") : isDirty ? t("editor.unsaved") : t("editor.saved")}
+            />
+            <span
+              className="save-state-label text-[10px] font-medium"
+              data-state={isSaving ? "saving" : isDirty ? "dirty" : "saved"}
+            >
+              {isSaving ? t("editor.saving") : isDirty ? t("editor.unsaved") : t("editor.saved")}
+            </span>
+          </span>
+          {hasDocument && (
+            <span className="word-count-label text-[10px] text-muted" title={formatWordCount(countWords(content))}>
+              {formatWordCount(countWords(content))}
+            </span>
+          )}
           <div className="view-switcher flex items-center rounded-lg p-0.5">
             <IconButton
               active={viewMode === "edit"}
@@ -714,49 +735,14 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
           <IconButton label={t("editor.save")} onClick={() => void saveActiveNote()}>
             <Save className="h-4 w-4" />
           </IconButton>
-          <Tooltip label={isExporting ? t("editor.exporting") : t("editor.export")} suppress={openDropdownKey === "export"}>
-            <ToolbarDropdownButton
-              disabled={!hasDocument || isExporting}
-              icon={<FileDown className="h-3.5 w-3.5" />}
-              label={t("editor.export")}
-              onOpenChange={(isOpen) => setOpenDropdownKey(isOpen ? "export" : null)}
-              width={200}
-            >
-              {(close) => (
-                <>
-                  <ToolbarMenuItem
-                    label={t("editor.exportWord")}
-                    onSelect={() => {
-                      close();
-                      void exportActiveNote("word");
-                    }}
-                  />
-                  <ToolbarMenuItem
-                    label={t("editor.exportHtml")}
-                    onSelect={() => {
-                      close();
-                      void exportActiveNote("html");
-                    }}
-                  />
-                  <ToolbarMenuItem
-                    label={t("editor.exportMarkdown")}
-                    onSelect={() => {
-                      close();
-                      void exportActiveNote("markdown");
-                    }}
-                  />
-                  <ToolbarMenuItem
-                    label={t("editor.exportPdf")}
-                    onSelect={() => {
-                      close();
-                      void exportActiveNote("pdf");
-                    }}
-                    separatorBefore
-                  />
-                </>
-              )}
-            </ToolbarDropdownButton>
-          </Tooltip>
+          <IconButton
+            className="export-button"
+            disabled={!hasDocument || isExporting}
+            label={t("editor.export")}
+            onClick={() => setExportDialogOpen(true)}
+          >
+            <FileDown className="h-4 w-4" />
+          </IconButton>
           <IconButton
             className="max-[760px]:hidden"
             disabled={!hasDocument}
@@ -790,6 +776,8 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
       <div
         aria-label={t("editor.toolbar")}
         className="markdown-toolbar flex items-center gap-0.5 overflow-x-auto border-b border-border px-3.5"
+        data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
+        onMouseDown={handleWindowDragMouseDown}
         role="toolbar"
       >
         {toolbar.map((entry) =>
@@ -1069,6 +1057,21 @@ export const EditorWorkspace = forwardRef<EditorHandle, {
         open={noteSyntaxDialog?.kind === "remoteImage"}
       />
       {versionsOpen && <VersionsPanel onClose={() => setVersionsOpen(false)} />}
+      <ExportDialog
+        bodyFont={settings.appearance.bodyFont}
+        content={content}
+        isExporting={isExporting}
+        locale={resolveLocale(settings.appearance.locale)}
+        note={activeNote}
+        onClose={() => setExportDialogOpen(false)}
+        onExport={(opts) => {
+          setExportDialogOpen(false);
+          void exportActiveNote(opts.format, opts);
+        }}
+        open={exportDialogOpen}
+        relativePath={activePath ?? ""}
+        root={workspaceRoot}
+      />
     </section>
   );
 });

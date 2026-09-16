@@ -46,9 +46,7 @@ export type LibraryPanelMode =
   | "attachments"
   | "index"
   | "sync"
-  | "graph"
-  | "mindmap"
-  | "flowchart"
+  | "visualization"
   | "ai"
   | "trash";
 

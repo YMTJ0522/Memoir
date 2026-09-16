@@ -24,6 +24,8 @@ export type HeadingItem = {
   id: string;
   depth: number;
   text: string;
+  /** 1-based line number in the source document. Used for editor-mode outline jumps. */
+  line?: number;
 };
 
 export type NavFilter = "all" | "recent" | "favorites" | "uncategorized";

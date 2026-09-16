@@ -110,6 +110,11 @@ export async function renderMermaidDiagram(code: string) {
         startOnLoad: false,
         theme,
         securityLevel: "strict",
+        // Disable HTML labels (foreignObject) so the rendered SVG can be
+        // rasterized to PNG via canvas — foreignObject taints the canvas and
+        // makes toDataURL() throw a SecurityError. Pure-SVG text looks nearly
+        // identical and supports <br/> line breaks.
+        htmlLabels: false,
         themeVariables: memoirThemeVariables(),
       });
       mermaidInitialized = true;

@@ -6,3 +6,4 @@ pub mod filesystem;
 pub mod github_releases;
 pub mod index;
 pub mod link_preview;
+pub mod web_search;

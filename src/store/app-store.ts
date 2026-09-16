@@ -61,7 +61,9 @@ function storeT(settings: AppSettings, key: MessageKey, params?: MessageParams) 
 const PREFERENCES_DEBOUNCE_MS = 300;
 const DRAFT_DEBOUNCE_MS = 450;
 const QUERY_DEBOUNCE_MS = 150;
-const CLOUD_SYNC_DEBOUNCE_MS = 15_000;
+const CLOUD_SYNC_DEBOUNCE_MS = 30_000;
+const CLOUD_SYNC_MAX_RETRIES = 3;
+const CLOUD_SYNC_RETRY_DELAYS = [20_000, 45_000, 90_000];
 const AI_SESSIONS_DEBOUNCE_MS = 400;
 export const AUTOSAVE_INTERVAL_MS = 3000;
 export const NOTE_METADATA_DEBOUNCE_MS = 80;
@@ -153,6 +155,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
   let cloudSyncTimer: number | null = null;
   let cloudSyncInFlight = false;
   let cloudSyncPending = false;
+  let cloudSyncRetryCount = 0;
   let cloudSyncProgressWatch: Promise<void> | null = null;
   let metadataTimer: number | null = null;
   let metadataPath: string | null = null;
@@ -1267,10 +1270,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         void runLibraryQuery();
       },
       setLibraryPanelMode(libraryPanelMode) {
-        const isMainArea =
-          libraryPanelMode === "graph" ||
-          libraryPanelMode === "mindmap" ||
-          libraryPanelMode === "flowchart";
+        const isMainArea = libraryPanelMode === "visualization";
         set({
           libraryPanelMode,
           mobilePanel: isMainArea ? "editor" : "library",
@@ -1391,6 +1391,7 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
         try {
           const result = await gateways.cloudSync.runSync(root, profile);
           const report = mergeCloudSyncReport(result.report) ?? result.report;
+          cloudSyncRetryCount = 0;
           set({
             cloudSyncProfile: mergeCloudSyncProfile(result.profile),
             status: storeT(get().settings, "status.cloudSyncComplete"),
@@ -1412,11 +1413,26 @@ export function createAppStore(gateways: AppGateways = getGateways()) {
           const rateLimited =
             /rate[- ]?limited/i.test(gateway.details ?? "") ||
             /rate[- ]?limited/i.test(gateway.message);
-          set({
-            error: rateLimited
-              ? storeT(get().settings, "errors.runCloudSyncRateLimited")
-              : storeT(get().settings, "errors.runCloudSync", { message: gateway.message }),
-          });
+          if (rateLimited && cloudSyncRetryCount < CLOUD_SYNC_MAX_RETRIES) {
+            const delay = CLOUD_SYNC_RETRY_DELAYS[cloudSyncRetryCount] ?? CLOUD_SYNC_RETRY_DELAYS[CLOUD_SYNC_RETRY_DELAYS.length - 1];
+            cloudSyncRetryCount += 1;
+            set({
+              error: storeT(get().settings, "errors.runCloudSyncRateLimitedRetry", {
+                seconds: Math.round(delay / 1000),
+              }),
+            });
+            cloudSyncTimer = window.setTimeout(() => {
+              cloudSyncTimer = null;
+              void runScheduledCloudSync();
+            }, delay);
+          } else {
+            cloudSyncRetryCount = 0;
+            set({
+              error: rateLimited
+                ? storeT(get().settings, "errors.runCloudSyncRateLimited")
+                : storeT(get().settings, "errors.runCloudSync", { message: gateway.message }),
+            });
+          }
           throw error;
         } finally {
           cloudSyncInFlight = false;

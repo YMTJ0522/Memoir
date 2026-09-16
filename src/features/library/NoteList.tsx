@@ -1,4 +1,4 @@
-import {
+﻿import {
   ArrowDownWideNarrow,
   BookOpen,
   Code2,
@@ -11,7 +11,6 @@ import {
   Sparkles,
   Star,
   Upload,
-  Waypoints,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -32,7 +31,6 @@ import type { AppLocale } from "../../i18n/locale";
 import { useI18n } from "../../i18n/react";
 import { AttachmentLibrary } from "../attachments/AttachmentLibrary";
 import { CloudSyncPanel } from "../sync/CloudSyncPanel";
-import { NoteGraphPanel } from "../graph/NoteGraphPanel";
 import { TrashPanel } from "../trash/TrashPanel";
 import { IndexInspector } from "./IndexInspector";
 import { NoteLinksPanel } from "./NoteLinksPanel";
@@ -48,6 +46,31 @@ export const NOTE_LIST_VIRTUAL_THRESHOLD = 80;
 const VIRTUAL_OVERSCAN = 6;
 const VIRTUAL_ROW_COMFORTABLE = 104;
 const VIRTUAL_ROW_COMPACT = 88;
+
+/** Highlight case-insensitive matches of query in text. */
+function highlightSearch(text: string, query: string) {
+  const q = query.trim().toLowerCase();
+  if (!q) return text;
+  const parts: React.ReactNode[] = [];
+  let from = 0;
+  let key = 0;
+  const lower = text.toLowerCase();
+  while (true) {
+    const idx = lower.indexOf(q, from);
+    if (idx === -1) {
+      if (from < text.length) parts.push(text.slice(from));
+      break;
+    }
+    if (idx > from) parts.push(text.slice(from, idx));
+    parts.push(
+      <mark key={key++} className="bg-accent/20 text-accent font-medium">
+        {text.slice(idx, idx + q.length)}
+      </mark>,
+    );
+    from = idx + q.length;
+  }
+  return parts;
+}
 
 export function NoteList({
   onCreate,
@@ -122,17 +145,13 @@ export function NoteList({
           data-tauri-drag-region={isTauriRuntime() ? "" : undefined}
           onMouseDown={handleWindowDragMouseDown}
         >
-          {mode === "index" || mode === "attachments" || mode === "graph" || mode === "mindmap" || mode === "trash" ? (
+          {mode === "index" || mode === "attachments" || mode === "trash" ? (
             <h2 className="text-[13px] font-semibold tracking-[-0.02em] text-text">
               {mode === "attachments"
                 ? t("library.attachments")
-                : mode === "graph"
-                  ? t("library.graph")
-                  : mode === "mindmap"
-                    ? t("library.mindmap")
-                    : mode === "trash"
-                      ? t("library.trash")
-                      : t("library.index")}
+                : mode === "trash"
+                  ? t("library.trash")
+                  : t("library.index")}
             </h2>
           ) : mode === "ai" ? (
             <h2 className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.02em] text-text">
@@ -171,9 +190,9 @@ export function NoteList({
             <IconButton label={t("library.importAttachment")} onClick={() => void importAttachments()}>
               <Upload className="h-4 w-4" />
             </IconButton>
-          ) : mode === "index" || mode === "graph" || mode === "mindmap" || mode === "trash" || mode === "ai" ? (
+          ) : mode === "index" || mode === "trash" || mode === "ai" ? (
             <span aria-hidden className="h-8 w-8" />
-          ) : mode === "notes" ? (
+          ) : mode === "notes" || mode === "visualization" ? (
             <div className="flex items-center gap-1.5">
               <IconButton label={t("library.importNote")} onClick={() => void importArticles()}>
                 <FileUp className="h-4 w-4" />
@@ -199,15 +218,11 @@ export function NoteList({
         <AttachmentLibrary onInsert={onInsertAttachment} />
       ) : mode === "index" ? (
         <IndexInspector />
-      ) : mode === "graph" ? (
-        <NoteGraphPanel />
-      ) : mode === "mindmap" ? (
-        <MindMapPanel />
       ) : mode === "sync" ? (
         <CloudSyncPanel />
       ) : mode === "trash" ? (
         <TrashPanel />
-      ) : mode === "notes" ? (
+      ) : mode === "notes" || mode === "visualization" ? (
         <div className="memoir-panel-in flex min-h-0 flex-1 flex-col">
           <label className="note-search relative mx-3 mt-2.5 block">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
@@ -241,6 +256,7 @@ export function NoteList({
             locale={locale}
             menuPath={menuTarget?.path ?? null}
             notes={filteredNotes}
+            query={query}
             onOpenMenu={setMenuTarget}
             onSelect={(path) => void selectNote(path)}
           />
@@ -318,70 +334,6 @@ export function NoteList({
   );
 }
 
-function MindMapPanel() {
-  const notes = useAppStore((state) => state.notes);
-  const activePath = useAppStore((state) => state.activePath);
-  const selectNote = useAppStore((state) => state.selectNote);
-  const { t } = useI18n();
-  const [query, setQuery] = useState("");
-  const needle = query.trim().toLowerCase();
-  const filtered = useMemo(
-    () =>
-      notes.filter((note) => {
-        if (!needle) return true;
-        return (
-          note.title.toLowerCase().includes(needle) ||
-          note.relativePath.toLowerCase().includes(needle)
-        );
-      }),
-    [needle, notes],
-  );
-  return (
-    <div className="memoir-panel-in flex min-h-0 flex-1 flex-col">
-      <label className="note-search relative mx-3 mt-2.5 block">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
-        <Input
-          aria-label={t("library.mindmapSearch")}
-          className="h-8 rounded-[10px] pl-8 shadow-none"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("library.mindmapSearchPlaceholder")}
-          type="search"
-          value={query}
-        />
-      </label>
-      <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-3 pt-2">
-        {!filtered.length ? (
-          <p className="px-2 py-8 text-center text-xs text-muted">
-            {notes.length ? t("library.mindmapNoMatches") : t("library.mindmapEmpty")}
-          </p>
-        ) : (
-          filtered.map((note) => {
-            const active = activePath === note.relativePath;
-            return (
-              <button
-                className={cn(
-                  "mindmap-note-row grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2.5 text-left",
-                  active && "is-active",
-                )}
-                key={note.relativePath}
-                onClick={() => void selectNote(note.relativePath)}
-                type="button"
-              >
-                <Waypoints className="h-3.5 w-3.5 text-muted" strokeWidth={1.8} />
-                <span className="min-w-0">
-                  <span className="block truncate text-[12px] font-medium text-text">
-                    {note.title || note.fileName}
-                  </span>
-                  <span className="block truncate text-[10px] text-muted">{note.relativePath}</span>
-                </span>
-              </button>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
 
 function NoteCardWindow({
   notes,
@@ -389,6 +341,7 @@ function NoteCardWindow({
   menuPath,
   density,
   locale,
+  query,
   onSelect,
   onOpenMenu,
 }: {
@@ -397,6 +350,7 @@ function NoteCardWindow({
   menuPath: string | null;
   density: string;
   locale: AppLocale;
+  query: string;
   onSelect: (path: string) => void;
   onOpenMenu: (target: NoteMenuTarget) => void;
 }) {
@@ -454,6 +408,7 @@ function NoteCardWindow({
                 locale={locale}
                 menuOpen={menuPath === note.relativePath}
                 note={note}
+                query={query}
                 onOpenMenu={onOpenMenu}
                 onSelect={onSelect}
               />
@@ -469,6 +424,7 @@ function NoteCardWindow({
             locale={locale}
             menuOpen={menuPath === note.relativePath}
             note={note}
+            query={query}
             onOpenMenu={onOpenMenu}
             onSelect={onSelect}
           />
@@ -484,6 +440,7 @@ function NoteCard({
   menuOpen,
   density,
   locale,
+  query,
   onSelect,
   onOpenMenu,
 }: {
@@ -492,6 +449,7 @@ function NoteCard({
   menuOpen: boolean;
   density: string;
   locale: AppLocale;
+  query: string;
   onSelect: (path: string) => void;
   onOpenMenu: (target: NoteMenuTarget) => void;
 }) {
@@ -543,11 +501,11 @@ function NoteCard({
         ) : (
           <FileText className="h-3.5 w-3.5 text-accent" />
         )}
-        <h3 className="truncate text-[13px] font-semibold text-text">{noteDisplayName(note)}</h3>
+        <h3 className="truncate text-[13px] font-semibold text-text">{highlightSearch(noteDisplayName(note), query)}</h3>
         {note.favorite && <Star className="h-3.5 w-3.5 fill-accent text-accent" />}
       </div>
       <p className="mt-1.5 line-clamp-2 text-[11px] leading-[1.65] text-muted">
-        {note.snippet || note.excerpt || note.relativePath}
+        {highlightSearch(note.snippet || note.excerpt || note.relativePath, query)}
       </p>
       <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">

@@ -495,8 +495,8 @@
 }
 
 .ai-bubble {
-  max-width: min(86%, 640px);
-  border-radius: 12px;
+  max-width: min(88%, 640px);
+  border-radius: 14px;
   padding: 10px 14px;
   font-size: 13.5px;
   line-height: 1.7;
@@ -507,6 +507,7 @@
   background: var(--memoir-accent);
   color: var(--memoir-accent-contrast);
   border-bottom-right-radius: 4px;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--memoir-accent) 25%, transparent);
 }
 
 /* assistant content is laid out flat (no chat bubble), matching the
@@ -515,6 +516,14 @@
   background: transparent;
   border: none;
   padding: 0;
+  max-width: 100%;
+}
+
+/* Add subtle separation between consecutive assistant messages */
+.ai-msg-row.is-assistant + .ai-msg-row.is-assistant {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--memoir-border) 60%, transparent);
 }
 
 
@@ -609,6 +618,41 @@
   margin: 10px 0;
 }
 
+.ai-markdown .ai-table-wrap {
+  margin: 8px 0;
+  overflow-x: auto;
+  border-radius: 9px;
+  border: 1px solid var(--memoir-border);
+}
+
+.ai-markdown .ai-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.ai-markdown .ai-table-wrap th {
+  background: var(--memoir-panel);
+  font-weight: 600;
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--memoir-border);
+  white-space: nowrap;
+}
+
+.ai-markdown .ai-table-wrap td {
+  padding: 6px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--memoir-border) 60%, transparent);
+}
+
+.ai-markdown .ai-table-wrap tr:last-child td {
+  border-bottom: none;
+}
+
+.ai-markdown .ai-table-wrap tr:hover td {
+  background: color-mix(in srgb, var(--memoir-accent) 5%, transparent);
+}
+
 .ai-markdown .ai-task.is-done {
   text-decoration: line-through;
   color: var(--memoir-muted);
@@ -627,10 +671,11 @@
 .ai-action-button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
+  gap: 4px;
   height: 26px;
+  padding: 0 8px;
   border-radius: 7px;
+  font-size: 11.5px;
   color: var(--memoir-muted);
   transition: background var(--memoir-motion-fast) var(--memoir-ease),
     color var(--memoir-motion-fast) var(--memoir-ease);
@@ -639,6 +684,23 @@
 .ai-action-button:hover {
   background: color-mix(in srgb, var(--memoir-muted) 12%, transparent);
   color: var(--memoir-text);
+}
+
+.ai-action-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ai-action-button--icon {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.ai-bubble-actions {
+  gap: 4px;
 }
 
 
@@ -723,4 +785,128 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Mentioned notes row (above composer) ── */
+
+.ai-mentioned-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-mentioned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--memoir-text);
+  background: color-mix(in srgb, var(--memoir-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--memoir-accent) 25%, transparent);
+}
+
+.ai-mentioned-chip svg {
+  flex-shrink: 0;
+  color: var(--memoir-accent);
+}
+
+.ai-mentioned-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--memoir-muted);
+  transition: color 0.15s, background 0.15s;
+}
+
+.ai-mentioned-remove:hover {
+  color: var(--memoir-danger);
+  background: color-mix(in srgb, var(--memoir-danger) 12%, transparent);
+}
+
+/* ── Quick command row (always visible above composer) ── */
+
+.ai-quick-row {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ai-quick-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Mention picker dropdown ── */
+
+.ai-mention-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--memoir-elevated);
+  border: 1px solid var(--memoir-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.ai-mention-header {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--memoir-muted);
+  background: var(--memoir-panel);
+  border-bottom: 1px solid var(--memoir-border);
+}
+
+.ai-mention-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ai-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--memoir-text);
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.ai-mention-item:hover {
+  background: color-mix(in srgb, var(--memoir-accent) 10%, transparent);
+}
+
+.ai-mention-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--memoir-muted);
+}
+
+/* ── Composer textarea auto-height ── */
+
+.ai-composer-input {
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow-y: auto;
+  border: 1px solid var(--memoir-border);
+  border-radius: 12px;
+  background: var(--memoir-elevated);
+  color: var(--memoir-text);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color var(--memoir-motion-fast) var(--memoir-ease);
+  field-sizing: content; /* modern browsers: auto-grow textarea */
 }

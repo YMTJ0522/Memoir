@@ -1,4 +1,4 @@
-import { FolderOpen, SmilePlus } from "lucide-react";
+import { FileDown, FolderOpen, SmilePlus } from "lucide-react";
 import { ContextMenu, ContextMenuItem } from "../../components/ui";
 import { useI18n } from "../../i18n/react";
 
@@ -14,11 +14,13 @@ export function FolderContextMenu({
   onClose,
   onOpen,
   onCustomize,
+  onExport,
 }: {
   target: FolderMenuTarget | null;
   onClose: () => void;
   onOpen: (folder: string) => void;
   onCustomize: (folder: string) => void;
+  onExport: (folder: string) => void;
 }) {
   const { t } = useI18n();
   if (!target) return null;
@@ -36,6 +38,7 @@ export function FolderContextMenu({
         label={t("menu.openFolder")}
         onSelect={() => onOpen(target.folder)}
       />
+      <ContextMenuItem icon={<FileDown />} label={t("menu.exportFolder")} onSelect={() => onExport(target.folder)} />
       <ContextMenuItem
         icon={<SmilePlus />}
         label={t("menu.customizeFolder")}

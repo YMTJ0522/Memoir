@@ -27,7 +27,7 @@ export function noteDisplayName(note: Pick<NoteMeta, "fileName" | "relativePath"
   return (
     fileNameTitle(note.fileName) ||
     fileNameTitle(note.relativePath.split("/").pop() || "") ||
-    "Untitled"
+    "未命名"
   );
 }
 
@@ -85,7 +85,7 @@ function firstLevelOneHeading(content: string) {
 }
 
 export function extractTitle(content: string, fallback: string) {
-  return firstLevelOneHeading(content) || fileNameTitle(fallback) || "Untitled";
+  return firstLevelOneHeading(content) || fileNameTitle(fallback) || "未命名";
 }
 
 export function buildExcerpt(content: string) {
@@ -211,19 +211,19 @@ export function extractHeadings(content: string): HeadingItem[] {
   const headings: HeadingItem[] = [];
   let inFence = false;
 
-  for (const line of content.split("\n")) {
+  content.split("\n").forEach((line, index) => {
     if (/^\s*(```|~~~)/.test(line)) {
       inFence = !inFence;
-      continue;
+      return;
     }
-    if (inFence) continue;
+    if (inFence) return;
 
     const match = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (!match) continue;
+    if (!match) return;
     const text = match[2].replace(/[#`*_~]/g, "").trim();
-    if (!text) continue;
-    headings.push({ id: slugger.slug(text), depth: match[1].length, text });
-  }
+    if (!text) return;
+    headings.push({ id: slugger.slug(text), depth: match[1].length, text, line: index + 1 });
+  });
 
   return headings;
 }

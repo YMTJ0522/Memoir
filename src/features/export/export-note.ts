@@ -5,6 +5,8 @@ import { resolveLocale } from "../../i18n/locale";
 import { t, type MessageKey, type MessageParams } from "../../i18n/translate";
 import { useAppStore } from "../../store/app-store";
 import { parseNote } from "../library/note-utils";
+import type { ExportOptions } from "./export-options";
+import { DEFAULT_EXPORT_OPTIONS } from "./export-options";
 import { exportFileName, htmlDocument, markdownDocument } from "./export-document";
 import { defaultExportPath } from "./pdf-file-name";
 import { renderNoteDocx } from "./render-note-docx";
@@ -74,9 +76,10 @@ export async function resolveNoteContent(relativePath: string) {
   return { content, note };
 }
 
-export async function exportNote(relativePath: string, format: ExportFormat) {
-  if (format === "pdf") return exportNotePdfFormat(relativePath);
-  if (format === "word") return exportNoteWordFormat(relativePath);
+export async function exportNote(relativePath: string, format: ExportFormat, options?: Partial<ExportOptions>) {
+  const opts: ExportOptions = { ...DEFAULT_EXPORT_OPTIONS, ...options, format: format as ExportOptions["format"] };
+  if (format === "pdf") return exportNotePdfFormat(relativePath, opts);
+  if (format === "word") return exportNoteWordFormat(relativePath, opts);
   const previousStatus = useAppStore.getState().status;
   const keys = FORMAT_KEYS[format];
   try {
@@ -109,7 +112,7 @@ export async function exportNote(relativePath: string, format: ExportFormat) {
     const text =
       format === "markdown"
         ? markdownDocument(title, resolved.content)
-        : htmlDocument(title, bodyHtml, languageTag);
+        : htmlDocument(title, bodyHtml, languageTag, opts.template, opts.pageMargin);
     await getGateways().workspace.writeExportText(chosen, text, "text/html;charset=utf-8");
     useAppStore.setState({ status: currentT(keys.exported) });
     return chosen;
@@ -122,8 +125,9 @@ export async function exportNote(relativePath: string, format: ExportFormat) {
   }
 }
 
-/** PDF export keeps the original dedicated flow (canvas render + binary write). */
-export async function exportNotePdfFormat(relativePath: string) {
+/** PDF export uses the native print-to-PDF pipeline (vector, selectable text). */
+export async function exportNotePdfFormat(relativePath: string, options?: Partial<ExportOptions>) {
+  const opts: ExportOptions = { ...DEFAULT_EXPORT_OPTIONS, ...options, format: "pdf" };
   const previousStatus = useAppStore.getState().status;
   const keys = FORMAT_KEYS.pdf;
   try {
@@ -144,16 +148,17 @@ export async function exportNotePdfFormat(relativePath: string) {
     if (!chosen) return null;
 
     useAppStore.setState({ error: "", status: currentT(keys.exporting) });
-    const bytes = await renderNotePdf({
+    await renderNotePdf({
       bodyFont: settings.appearance.bodyFont,
       content: resolved.content,
       locale: resolveLocale(settings.appearance.locale),
       note: resolved.note,
       relativePath,
       root: workspaceRoot,
+      templateId: opts.template,
+      pageMargin: opts.pageMargin,
+      outputPath: chosen,
     });
-    const bytesBase64 = bytesToBase64(bytes);
-    await getGateways().workspace.writeExportFile(chosen, bytesBase64);
     useAppStore.setState({ status: currentT(keys.exported) });
     return chosen;
   } catch (error) {
@@ -166,7 +171,8 @@ export async function exportNotePdfFormat(relativePath: string) {
 }
 
 /** Word export generates a true OOXML .docx via the docx library. */
-export async function exportNoteWordFormat(relativePath: string) {
+export async function exportNoteWordFormat(relativePath: string, options?: Partial<ExportOptions>) {
+  const opts: ExportOptions = { ...DEFAULT_EXPORT_OPTIONS, ...options, format: "word" };
   const previousStatus = useAppStore.getState().status;
   const keys = FORMAT_KEYS.word;
   try {
@@ -194,6 +200,7 @@ export async function exportNoteWordFormat(relativePath: string) {
       note: resolved.note,
       relativePath,
       root: workspaceRoot,
+      templateId: opts.template,
     });
     const bytesBase64 = bytesToBase64(bytes);
     await getGateways().workspace.writeExportFile(chosen, bytesBase64);
@@ -206,6 +213,98 @@ export async function exportNoteWordFormat(relativePath: string) {
     });
     return null;
   }
+}
+
+/**
+ * Batch-export multiple notes into a chosen directory.
+ * Returns { succeeded, failed } counts.
+ */
+export async function exportNotesBatch(
+  relativePaths: string[],
+  format: ExportFormat,
+  options?: Partial<ExportOptions>,
+): Promise<{ succeeded: number; failed: number }> {
+  if (relativePaths.length === 0) return { succeeded: 0, failed: 0 };
+  const { workspaceRoot } = useAppStore.getState();
+  if (!workspaceRoot) return { succeeded: 0, failed: relativePaths.length };
+
+  const dir = await getGateways().workspace.chooseExportPath({
+    defaultPath: workspaceRoot,
+    title: currentT("dialog.exportBatch"),
+  });
+  if (!dir) return { succeeded: 0, failed: 0 };
+
+  let succeeded = 0;
+  let failed = 0;
+  const total = relativePaths.length;
+
+  for (let i = 0; i < relativePaths.length; i += 1) {
+    const relativePath = relativePaths[i]!;
+    useAppStore.setState({ status: currentT("editor.exportingBatch", { current: i + 1, total }) });
+    try {
+      // Resolve note content
+      const resolved = await resolveNoteContent(relativePath);
+      if (!resolved) {
+        failed += 1;
+        continue;
+      }
+
+      const { settings } = useAppStore.getState();
+      const title = parseNote(resolved.content, resolved.note.fileName).title;
+      const fileName = exportFileName(title, format);
+      const targetPath = `${dir}/${fileName}`;
+
+      if (format === "pdf" || format === "word") {
+        if (format === "pdf") {
+          await renderNotePdf({
+            bodyFont: settings.appearance.bodyFont,
+            content: resolved.content,
+            locale: resolveLocale(settings.appearance.locale),
+            note: resolved.note,
+            relativePath,
+            root: workspaceRoot,
+            templateId: options?.template ?? "minimal",
+            pageMargin: options?.pageMargin ?? "normal",
+            outputPath: targetPath,
+          });
+        } else {
+          const bytes = await renderNoteDocx({
+            bodyFont: settings.appearance.bodyFont,
+            content: resolved.content,
+            locale: resolveLocale(settings.appearance.locale),
+            note: resolved.note,
+            relativePath,
+            root: workspaceRoot,
+            templateId: options?.template ?? "minimal",
+          });
+          await getGateways().workspace.writeExportFile(targetPath, bytesToBase64(bytes));
+        }
+      } else {
+        const bodyHtml = await renderNoteHtmlBody({
+          bodyFont: settings.appearance.bodyFont,
+          content: resolved.content,
+          locale: resolveLocale(settings.appearance.locale),
+          note: resolved.note,
+          relativePath,
+          root: workspaceRoot,
+        });
+        const languageTag = resolveLocale(settings.appearance.locale) === "zh" ? "zh-CN" : "en";
+        const text =
+          format === "markdown"
+            ? markdownDocument(title, resolved.content)
+            : htmlDocument(title, bodyHtml, languageTag, options?.template ?? "minimal", options?.pageMargin ?? "normal");
+        await getGateways().workspace.writeExportText(targetPath, text, "text/html;charset=utf-8");
+      }
+      succeeded += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  useAppStore.setState({
+    status: currentT("status.exportedBatch", { succeeded, failed }),
+  });
+  return { succeeded, failed };
 }
 
 function bytesToBase64(bytes: Uint8Array) {

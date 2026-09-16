@@ -50,8 +50,8 @@ describe("renderNoteDocx (user doc)", () => {
     // The mono font must be used (code runs) — count occurrences.
     const consolasCount = (documentXml.match(/Consolas/g) ?? []).length;
     expect(consolasCount, "code runs with Consolas font").toBeGreaterThanOrEqual(codeLines);
-    // Dark code-block styling must be present: slate-800 shading + light text.
-    expect(documentXml).toContain('w:fill="1E293B"');
-    expect(documentXml).toContain('w:val="E2E8F0"');
+    // Light code-block styling must be present: light gray shading + dark text.
+    expect(documentXml).toContain('w:fill="F5F5F5"');
+    expect(documentXml).toContain('w:val="1F2937"');
   });
 });

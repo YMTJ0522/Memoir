@@ -51,6 +51,7 @@ import { rehypeSourceLines } from "./source-line";
 import { rehypeTaskOffsets, toggleTaskAtOffset } from "./task-list";
 import { PreviewTabs } from "./PreviewTabs";
 import { rehypeCodeLines } from "./rehype-code-lines";
+import { rehypeTableWrap } from "./rehype-table-wrap";
 import { writeClipboardText } from "../editor/clipboard";
 
 const MDX_IMPORT_EXPORT_DISABLED = "MDX_IMPORT_EXPORT_DISABLED";
@@ -158,6 +159,8 @@ const rehypePlugins = [
   highlightCode,
   // Must run after rehype-highlight so token spans survive the line split.
   rehypeCodeLines,
+  // Wrap tables in a scroll container.
+  rehypeTableWrap,
 ];
 const markdownRehypePlugins = [rehypeRaw, ...rehypePlugins];
 const mdxCache = new Map<string, ComponentType<{ components?: MDXComponents }>>();

@@ -28,6 +28,9 @@ import { I18nProvider } from "../../i18n/react";
 import { createRoot } from "react-dom/client";
 import { parseNote } from "../library/note-utils";
 import { NotePreviewArticle } from "../preview/NotePreviewArticle";
+import { Canvg } from "canvg";
+import type { ExportTemplateId } from "./export-options";
+import { EXPORT_TEMPLATES } from "./export-options";
 
 // The `docx` library is imported lazily (see loadDocxModule) because JSZip
 // decides its byte handling at module-evaluation time based on whether
@@ -108,31 +111,29 @@ function loadDocxModule(): Promise<DocxModule> {
 
 const EXPORT_WIDTH_PX = 794;
 
-// ── Design tokens (aligned with docx skill defaults) ────────────────────────
+// ── Design tokens (set per-export from the chosen template) ─────────────────
 
-const FONT_NAME = "Microsoft YaHei"; // Windows CJK default (docx skill)
-const FONT_MONO = "Consolas";
-const FONT_SIZE_BODY = 24; // half-points → 12pt
-const FONT_SIZE_H1 = 32; // 16pt
-const FONT_SIZE_H2 = 28; // 14pt
-const FONT_SIZE_H3 = 26; // 13pt
-const FONT_SIZE_H4 = 24; // 12pt
-const FONT_SIZE_CODE = 20; // 10pt
-const HEADING_COLOR = "1A5276"; // deep blue (docx skill default)
-const TABLE_HEADER_BG = "D5E8F0"; // docx skill default
-const TABLE_BORDER_COLOR = "CCCCCC";
-const LINE_SPACING = 360; // 1.5x (240 = single)
-const INDENT_FIRST_LINE = 480; // 2 CJK characters (twips)
-
-// Callout colour palette (matches preview CSS)
-const CALLOUT_PALETTE: Record<string, { border: string; bg: string }> = {
-  note: { border: "2563EB", bg: "EFF6FF" },
-  tip: { border: "16A34A", bg: "F0FDF4" },
-  success: { border: "16A34A", bg: "F0FDF4" },
-  warning: { border: "D97706", bg: "FFFBEB" },
-  danger: { border: "DC2626", bg: "FEF2F2" },
-  error: { border: "DC2626", bg: "FEF2F2" },
-};
+let FONT_NAME = "Microsoft YaHei";
+let FONT_MONO = "Consolas";
+const FONT_SIZE_BODY = 24;
+const FONT_SIZE_H1 = 34;
+const FONT_SIZE_H2 = 28;
+const FONT_SIZE_H3 = 26;
+const FONT_SIZE_H4 = 24;
+const FONT_SIZE_CODE = 20;
+let HEADING_COLOR = "000000";
+let TABLE_HEADER_BG = "F3F4F6";
+let TABLE_HEADER_TEXT = "000000";
+let TABLE_STRIPE_BG = "FAFAFA";
+let TABLE_BORDER_COLOR = "9CA3AF";
+let LINE_SPACING = 360;
+const INDENT_FIRST_LINE = 480;
+let CALLOUT_BORDER = "6B7280";
+let CALLOUT_BG = "F9FAFB";
+let CODE_BG = "F5F5F5";
+let CODE_BORDER = "D1D5DB";
+let CODE_TEXT_COLOR = "1F2937";
+let BLOCKQUOTE_BORDER = "9CA3AF";
 
 // ── Inline run extraction ────────────────────────────────────────────────────
 
@@ -331,6 +332,9 @@ function headingParagraph(el: Element): Paragraph {
       }),
   );
   const { before, after } = headingSpacing(level);
+  // Headings are distinguished by size and weight only — no decorative
+  // borders (the old H2 underline / H3 left bar rendered inconsistently in
+  // WPS and could appear on the wrong heading level).
   return new docxModule!.Paragraph({
     heading: `Heading${level}` as typeof HeadingLevel[keyof typeof HeadingLevel],
     spacing: { before, after },
@@ -348,10 +352,7 @@ function paragraphFromRuns(el: Element, opts: { indent?: boolean; spacing?: { be
   });
 }
 
-// Code block visual tokens (dark theme, matches the HTML export's pre style).
-const CODE_BG = "1E293B"; // slate-800
-const CODE_BORDER = "334155"; // slate-700
-const CODE_TEXT_COLOR = "E2E8F0"; // slate-200
+// Code block visual tokens (set per-export from the chosen template).
 
 function codeBlockParagraphs(el: Element): Paragraph[] {
   // Find the inner <code> or <pre> text.
@@ -422,8 +423,14 @@ function listItemParagraph(
 }
 
 function calloutParagraphs(el: Element): Paragraph[] {
-  const type = el.getAttribute("data-callout") ?? "note";
-  const palette = CALLOUT_PALETTE[type] ?? CALLOUT_PALETTE.note!;
+  const calloutBorder = {
+    left: { style: docxModule!.BorderStyle.SINGLE, size: 24, color: CALLOUT_BORDER },
+  };
+  const calloutShading = {
+    fill: CALLOUT_BG,
+    type: docxModule!.ShadingType.CLEAR,
+    color: "auto",
+  };
 
   const paragraphs: Paragraph[] = [];
   // Title (if present)
@@ -440,25 +447,60 @@ function calloutParagraphs(el: Element): Paragraph[] {
             size: FONT_SIZE_BODY,
           }),
         ],
-        border: {
-          left: { style: docxModule!.BorderStyle.SINGLE, size: 24, color: palette.border },
-        },
-        shading: { fill: palette.bg, type: docxModule!.ShadingType.CLEAR, color: "auto" },
-        indent: { left: 200 },
+        border: calloutBorder,
+        shading: calloutShading,
+        indent: { left: 200, right: 200 },
       }),
     );
   }
-  // Content children
+  // Content children — each block gets the same accent border and tint so
+  // the callout reads as one continuous shaded column.
   const contentEl = el.querySelector(".callout-content") ?? el;
   for (const child of [...contentEl.children]) {
     if (child === titleEl) continue;
-    const childParagraphs = elementToParagraphs(child);
-    // Apply callout border/background to each content paragraph.
-    for (const p of childParagraphs) {
-      // We can't easily modify an existing Paragraph's border after construction,
-      // so we just push them as-is. The callout styling is already conveyed
-      // through the title paragraph's border.
-      paragraphs.push(p);
+    const tag = child.tagName.toLowerCase();
+    if (tag === "p" || tag === "div" || tag === "blockquote") {
+      const runs = extractRuns(child);
+      if (runs.length === 0) continue;
+      paragraphs.push(
+        new docxModule!.Paragraph({
+          spacing: { before: 20, after: 20 },
+          indent: { left: 200, right: 200 },
+          border: calloutBorder,
+          shading: calloutShading,
+          children: runsToDocxChildren(runs),
+        }),
+      );
+    } else if (tag === "ul" || tag === "ol") {
+      const ref = nextListRef(tag === "ol" ? "number" : "bullet");
+      const items = [...child.children].filter((c) => c.tagName.toLowerCase() === "li");
+      for (const item of items) {
+        const runs = extractRuns(item);
+        if (runs.length === 0) continue;
+        paragraphs.push(
+          new docxModule!.Paragraph({
+            numbering: { reference: ref, level: 0 },
+            spacing: { before: 0, after: 40 },
+            indent: { left: 500, right: 200 },
+            border: calloutBorder,
+            shading: calloutShading,
+            children: runsToDocxChildren(runs),
+          }),
+        );
+      }
+    } else {
+      const text = child.textContent ?? "";
+      if (text.trim()) {
+        paragraphs.push(
+          new docxModule!.Paragraph({
+            spacing: { before: 20, after: 20 },
+            indent: { left: 200, right: 200 },
+            border: calloutBorder,
+            shading: calloutShading,
+            children: [new docxModule!.TextRun({ text: text.trim() })],
+          }),
+        );
+      }
     }
   }
   return paragraphs;
@@ -484,6 +526,18 @@ function imageParagraph(el: Element): Paragraph | null {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
   const altText = img.getAttribute("alt") ?? img.getAttribute("title") ?? "";
+
+  // Use the image's natural dimensions if available (stored by convertSvgToPng),
+  // otherwise fall back to a sensible default. Cap width to fit A4 margins.
+  const MAX_W = 500;
+  let imgW = Number(img.dataset.width) || 500;
+  let imgH = Number(img.dataset.height) || 300;
+  if (imgW > MAX_W) {
+    const ratio = MAX_W / imgW;
+    imgW = MAX_W;
+    imgH = Math.round(imgH * ratio);
+  }
+
   return new docxModule!.Paragraph({
     alignment: docxModule!.AlignmentType.CENTER,
     spacing: { before: 120, after: 120 },
@@ -491,7 +545,7 @@ function imageParagraph(el: Element): Paragraph | null {
       new docxModule!.ImageRun({
         type: ext === "svg" ? "png" : ext as "png" | "jpg" | "gif" | "bmp",
         data: bytes,
-        transformation: { width: 500, height: 300 },
+        transformation: { width: imgW, height: imgH },
         altText: { title: altText, description: altText, name: altText },
       }),
     ],
@@ -499,15 +553,12 @@ function imageParagraph(el: Element): Paragraph | null {
 }
 
 function blockquoteParagraphs(el: Element): Paragraph[] {
+  const quoteBorder = {
+    left: { style: docxModule!.BorderStyle.SINGLE, size: 24, color: BLOCKQUOTE_BORDER },
+  };
   const paragraphs: Paragraph[] = [];
-  for (const child of [...el.children]) {
-    const ps = elementToParagraphs(child);
-    for (const p of ps) {
-      // blockquote styling: left border, grey text — applied via spacing/indent
-      paragraphs.push(p);
-    }
-  }
-  if (paragraphs.length === 0) {
+  const children = [...el.children];
+  if (children.length === 0) {
     // Plain text blockquote
     const text = el.textContent ?? "";
     if (text) {
@@ -515,9 +566,54 @@ function blockquoteParagraphs(el: Element): Paragraph[] {
         new docxModule!.Paragraph({
           spacing: { before: 60, after: 60 },
           indent: { left: 400 },
-          children: [new docxModule!.TextRun({ text, italics: true, color: "6B7280" })],
+          border: quoteBorder,
+          children: [new docxModule!.TextRun({ text, italics: true, color: "374151" })],
         }),
       );
+    }
+    return paragraphs;
+  }
+  for (const child of children) {
+    const tag = child.tagName.toLowerCase();
+    if (tag === "p" || tag === "div" || tag === "blockquote") {
+      const runs = extractRuns(child);
+      if (runs.length === 0) continue;
+      paragraphs.push(
+        new docxModule!.Paragraph({
+          spacing: { before: 20, after: 20 },
+          indent: { left: 400 },
+          border: quoteBorder,
+          children: runsToDocxChildren(runs),
+        }),
+      );
+    } else if (tag === "ul" || tag === "ol") {
+      const ref = nextListRef(tag === "ol" ? "number" : "bullet");
+      const items = [...child.children].filter((c) => c.tagName.toLowerCase() === "li");
+      for (const item of items) {
+        const runs = extractRuns(item);
+        if (runs.length === 0) continue;
+        paragraphs.push(
+          new docxModule!.Paragraph({
+            numbering: { reference: ref, level: 0 },
+            spacing: { before: 0, after: 40 },
+            indent: { left: 700 },
+            border: quoteBorder,
+            children: runsToDocxChildren(runs),
+          }),
+        );
+      }
+    } else {
+      const text = child.textContent ?? "";
+      if (text.trim()) {
+        paragraphs.push(
+          new docxModule!.Paragraph({
+            spacing: { before: 20, after: 20 },
+            indent: { left: 400 },
+            border: quoteBorder,
+            children: [new docxModule!.TextRun({ text: text.trim(), italics: true, color: "374151" })],
+          }),
+        );
+      }
     }
   }
   return paragraphs;
@@ -530,7 +626,7 @@ function tableFromElement(el: Element): Table {
   const numCols = Math.max(...rows.map((r) => r.querySelectorAll("td, th").length));
   const colWidth = Math.floor((11906 - 2880) / numCols); // page content width / cols
 
-  const tableBorder = { style: docxModule!.BorderStyle.SINGLE, size: 1, color: TABLE_BORDER_COLOR };
+  const tableBorder = { style: docxModule!.BorderStyle.SINGLE, size: 2, color: TABLE_BORDER_COLOR };
   const cellBorders = {
     top: tableBorder,
     bottom: tableBorder,
@@ -541,6 +637,7 @@ function tableFromElement(el: Element): Table {
   const tableRows: TableRow[] = rows.map((row, rowIdx) => {
     const cells = [...row.querySelectorAll("td, th")];
     const isHeader = rowIdx === 0 || row.parentElement?.tagName === "THEAD";
+    const isStripe = !isHeader && rowIdx % 2 === 1;
     const tableCells: TableCell[] = cells.map((cell) => {
       const runs = extractRuns(cell);
       const children = runsToDocxChildren(runs);
@@ -548,21 +645,30 @@ function tableFromElement(el: Element): Table {
         borders: cellBorders,
         verticalAlign: docxModule!.VerticalAlign.CENTER,
         width: { size: colWidth, type: docxModule!.WidthType.DXA },
+        margins: { top: 60, bottom: 60, left: 100, right: 100 },
         children: [
           new docxModule!.Paragraph({
             alignment: docxModule!.AlignmentType.CENTER,
-            spacing: { before: 20, after: 20 },
+            spacing: { before: 0, after: 0 },
             children: isHeader
               ? children.map((c) => {
                   if (c instanceof docxModule!.TextRun) {
-                    return new docxModule!.TextRun({ ...c, bold: true });
+                    return new docxModule!.TextRun({
+                      ...c,
+                      bold: true,
+                      color: TABLE_HEADER_TEXT,
+                    });
                   }
                   return c;
                 })
               : children,
           }),
         ],
-        ...(isHeader ? { shading: { fill: TABLE_HEADER_BG, type: docxModule!.ShadingType.CLEAR, color: "auto" } } : {}),
+        ...(isHeader
+          ? { shading: { fill: TABLE_HEADER_BG, type: docxModule!.ShadingType.CLEAR, color: "auto" } }
+          : isStripe
+            ? { shading: { fill: TABLE_STRIPE_BG, type: docxModule!.ShadingType.CLEAR, color: "auto" } }
+            : {}),
       };
       return new docxModule!.TableCell(cellOpts);
     });
@@ -593,8 +699,15 @@ function elementToParagraphs(el: Element): Paragraph[] {
     case "p":
       return [paragraphFromRuns(el, { indent: true })];
 
-    case "pre":
+    case "pre": {
+      // A <pre> that contains an <img> is a mermaid diagram that was
+      // rasterised to PNG by convertSvgToPng — emit the image, not code.
+      const img = el.querySelector("img");
+      if (img) {
+        return [imageParagraph(img)].filter(Boolean) as Paragraph[];
+      }
       return codeBlockParagraphs(el);
+    }
 
     case "blockquote":
       return blockquoteParagraphs(el);
@@ -627,6 +740,8 @@ function elementToParagraphs(el: Element): Paragraph[] {
     case "div": {
       // Code block wrapper (.memoir-code-block) — extract the inner <pre>.
       if (el.classList.contains("memoir-code-block")) {
+        const img = el.querySelector("img");
+        if (img) return [imageParagraph(img)].filter(Boolean) as Paragraph[];
         const pre = el.querySelector("pre");
         if (pre) return codeBlockParagraphs(pre);
       }
@@ -645,12 +760,17 @@ function elementToParagraphs(el: Element): Paragraph[] {
       return [
         new docxModule!.Paragraph({
           spacing: { before: 120, after: 120 },
-          border: { bottom: { style: docxModule!.BorderStyle.SINGLE, size: 6, color: "D1D5DB" } },
+          border: { bottom: { style: docxModule!.BorderStyle.SINGLE, size: 6, color: "9CA3AF" } },
           children: [],
         }),
       ];
 
     default:
+      // Skip non-visual elements that would leak their text content (CSS,
+      // scripts, mermaid <style> blocks, SVG diagrams, etc.).
+      if (tag === "style" || tag === "script" || tag === "template" || tag === "noscript" || tag === "svg") {
+        return [];
+      }
       // For unknown elements, try to extract text content as a paragraph.
       if (el.textContent?.trim()) {
         return [paragraphFromRuns(el, { indent: true })];
@@ -687,6 +807,9 @@ function detailsParagraphs(el: HTMLDetailsElement): Paragraph[] {
 /** Converts the rendered article body into docx children (Paragraphs + Tables). */
 function articleBodyToDocxChildren(article: HTMLElement): DocxChild[] {
   const children: DocxChild[] = [];
+  // Remove all non-visual elements that would leak their text content
+  // (mermaid <style> blocks, scripts, SVG diagrams, templates, etc.).
+  article.querySelectorAll("style, script, template, noscript, svg").forEach((node) => node.remove());
   // Remove the frontmatter properties card — it's editor metadata.
   article
     .querySelectorAll("details.memoir-frontmatter-properties")
@@ -757,6 +880,96 @@ function blobToDataUrl(blob: Blob): Promise<string | null> {
   });
 }
 
+/**
+ * Replaces every <svg> in the container with a <img> holding a PNG raster.
+ *
+ * We use canvg instead of Image+canvas because mermaid's SVG (even with
+ * htmlLabels disabled) can still taint the canvas via foreignObject or
+ * external references — canvg parses the SVG in JS and draws directly,
+ * bypassing the browser's image-loading security checks entirely.
+ *
+ * serializeFlowchartSvg is still used to inline computed CSS styles (mermaid
+ * relies on CSS variables for colour) before canvg renders.
+ */
+async function convertSvgToPng(container: HTMLElement) {
+  const svgs = [...container.querySelectorAll("svg")];
+  const log = (msg: string) => console.log(`[docx-svg] ${msg}`);
+  log(`Found ${svgs.length} SVG(s) in article`);
+
+  const INLINE_PROPS = [
+    "fill", "stroke", "stroke-width", "stroke-opacity", "fill-opacity",
+    "color", "font-family", "font-size", "font-weight", "font-style", "opacity",
+  ] as const;
+
+  const inlineAllStyles = (node: Element) => {
+    const computed = getComputedStyle(node);
+    for (const prop of INLINE_PROPS) {
+      const value = computed.getPropertyValue(prop);
+      if (value && value !== "none" && value !== "normal") {
+        (node as SVGElement).style.setProperty(prop, value);
+      }
+    }
+    for (const child of Array.from(node.children)) inlineAllStyles(child);
+  };
+
+  for (let i = 0; i < svgs.length; i++) {
+    const svg = svgs[i];
+    try {
+      const rect = svg.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width || svg.clientWidth || 800));
+      const height = Math.max(1, Math.round(rect.height || svg.clientHeight || 600));
+      log(`SVG #${i}: rect=${rect.width}x${rect.height}, clientW=${svg.clientWidth}, viewBox=${svg.getAttribute("viewBox")}, hasForeignObject=${svg.innerHTML.includes("foreignObject")}`);
+
+      const clone = svg.cloneNode(true) as SVGSVGElement;
+      inlineAllStyles(clone);
+      clone.setAttribute("width", String(width));
+      clone.setAttribute("height", String(height));
+      clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      if (!clone.getAttribute("xmlns")) {
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      }
+      const svgText = new XMLSerializer().serializeToString(clone);
+      log(`SVG #${i} serialized, length=${svgText.length}, first200=${svgText.slice(0, 200)}`);
+
+      const scale = 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D context unavailable");
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+
+      log(`SVG #${i} calling Canvg.fromString...`);
+      const renderer = Canvg.fromString(ctx, svgText, {
+        ignoreDimensions: true,
+        ignoreClear: true,
+      });
+      log(`SVG #${i} Canvg instance created, calling render...`);
+      await renderer.render();
+      log(`SVG #${i} canvg render done`);
+
+      const dataUrl = canvas.toDataURL("image/png");
+      log(`SVG #${i} PNG dataUrl length=${dataUrl.length}`);
+
+      const img = document.createElement("img");
+      img.src = dataUrl;
+      img.alt = "Diagram";
+      img.style.maxWidth = "100%";
+      img.dataset.width = String(width);
+      img.dataset.height = String(height);
+      svg.replaceWith(img);
+      log(`SVG #${i} replaced with <img>`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : String(err);
+      log(`SVG #${i} conversion FAILED: ${errMsg}`);
+      svg.remove();
+    }
+  }
+}
+
 // ── Numbering config builder ─────────────────────────────────────────────────
 
 function buildNumberingConfig(listRefs: { ref: string; type: "bullet" | "number" }[]) {
@@ -783,6 +996,7 @@ export async function renderNoteDocx({
   content,
   bodyFont,
   locale,
+  templateId = "minimal",
 }: {
   root: string | null;
   relativePath: string;
@@ -790,7 +1004,25 @@ export async function renderNoteDocx({
   content: string;
   bodyFont: BodyFont;
   locale: AppLocale;
+  templateId?: ExportTemplateId;
 }): Promise<Uint8Array> {
+  // Apply the chosen template's design tokens.
+  const tpl = EXPORT_TEMPLATES[templateId] ?? EXPORT_TEMPLATES.minimal;
+  FONT_NAME = tpl.docx.bodyFont;
+  FONT_MONO = tpl.docx.monoFont;
+  HEADING_COLOR = tpl.docx.headingColor;
+  TABLE_HEADER_BG = tpl.docx.tableHeaderBg;
+  TABLE_HEADER_TEXT = tpl.docx.tableHeaderText;
+  TABLE_STRIPE_BG = tpl.docx.tableStripeBg;
+  TABLE_BORDER_COLOR = tpl.docx.tableBorderColor;
+  LINE_SPACING = tpl.docx.lineSpacing;
+  CALLOUT_BORDER = tpl.docx.calloutBorder;
+  CALLOUT_BG = tpl.docx.calloutBg;
+  CODE_BG = tpl.docx.codeBg;
+  CODE_BORDER = tpl.docx.codeBorder;
+  CODE_TEXT_COLOR = tpl.docx.codeTextColor;
+  BLOCKQUOTE_BORDER = tpl.docx.blockquoteBorder;
+
   // Render the note through the preview pipeline.
   const host = document.createElement("div");
   host.className = "memoir-pdf-export";
@@ -825,8 +1057,27 @@ export async function renderNoteDocx({
       await inlineWorkspaceImages(article, root, relativePath);
     }
 
+    // Convert SVG diagrams (mermaid flowcharts etc.) to PNG — docx-js cannot
+    // embed SVG, and leaving them in would leak raw XML into the document.
+    await convertSvgToPng(article);
+
     // Reset list counter for this document.
     listCounter = 0;
+
+    const title = parseNote(content, note.fileName).title;
+
+    // Drop leading h1s that duplicate the document title — the template below
+    // emits its own centered title, so a note that opens with `# Title`
+    // (sometimes twice: a cover line then a body line) must not repeat it.
+    // Mirrors htmlDocument()'s dedup so Word and HTML/PDF exports agree.
+    if (title) {
+      let heading = article.querySelector("h1");
+      while (heading && (heading.textContent ?? "").trim() === title.trim()) {
+        const next = heading.nextElementSibling;
+        heading.remove();
+        heading = next && next.tagName === "H1" ? (next as HTMLHeadingElement) : null;
+      }
+    }
 
     // Convert article body to docx children.
     const children = articleBodyToDocxChildren(article);
@@ -847,8 +1098,6 @@ export async function renderNoteDocx({
         }
       }
     }
-
-    const title = parseNote(content, note.fileName).title;
 
     const doc = new docxModule!.Document({
       styles: {
@@ -894,13 +1143,17 @@ export async function renderNoteDocx({
             }),
           },
           children: [
-            // Document title as a centered H1.
+            // Document title as a centered H1 with a double rule underneath
+            // (mirrors the HTML export's body > h1:first-child).
             ...(title
               ? [
                   new docxModule!.Paragraph({
                     heading: docxModule!.HeadingLevel.HEADING_1,
                     alignment: docxModule!.AlignmentType.CENTER,
-                    spacing: { before: 0, after: 360 },
+                    spacing: { before: 0, after: 480 },
+                    border: {
+                      bottom: { style: docxModule!.BorderStyle.DOUBLE, size: 8, color: HEADING_COLOR },
+                    },
                     children: [
                       new docxModule!.TextRun({
                         text: title,
@@ -913,10 +1166,7 @@ export async function renderNoteDocx({
                   }),
                 ]
               : []),
-            // Remove the first H1 if it duplicates the title.
-            ...(title && children.length > 0 && isFirstChildH1WithTitle(children[0], title)
-              ? children.slice(1)
-              : children),
+            ...children,
           ],
         },
       ],
@@ -928,15 +1178,4 @@ export async function renderNoteDocx({
     reactRoot.unmount();
     host.remove();
   }
-}
-
-/** Checks if the first child is an H1 paragraph whose text matches the title. */
-function isFirstChildH1WithTitle(child: DocxChild, _title: string): boolean {
-  // We can't easily read back the text from a Paragraph object, so we check
-  // via the article DOM instead. This is a best-effort dedup.
-  // Since we already removed the frontmatter card and the article's first
-  // child would be an h1, we check if the first child came from an h1 element.
-  // The simplest approach: if the title is non-empty and the first child
-  // is a Paragraph, assume it's the heading we want to skip.
-  return child instanceof docxModule!.Paragraph;
 }

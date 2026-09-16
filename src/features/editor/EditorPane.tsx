@@ -14,7 +14,7 @@ import { search, searchKeymap } from "@codemirror/search";
 import { EditorSelection } from "@codemirror/state";
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { tags as highlightTags } from "@lezer/highlight";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { bindLiveEditor } from "../../domain/live-editor";
 import { fencedCodeBlockHighlighter, fencedCodeLanguages } from "./code-languages";
 import { CodeMirrorHost, type CodeMirrorHostHandle } from "./code-mirror-host";
@@ -23,6 +23,7 @@ import { collectClipboardAttachmentFiles, padMarkdownBlock } from "../../domain/
 import { writeClipboardText } from "./clipboard";
 import type { EditorMenuTarget } from "./EditorContextMenu";
 import type { AppLocale, AppSettings } from "../../domain/settings";
+import { isAiConfigured } from "../../domain/settings";
 import { useI18n } from "../../i18n/react";
 import { createMemoirSearchPanel, searchPanelLabels } from "./search-panel";
 import { toolbarKeymap } from "./toolbar-keymap";
@@ -35,6 +36,22 @@ import {
   type WikiCatalogNote,
 } from "./wiki-links";
 import { codeLangCompleteExtensions } from "./code-lang-complete";
+import { SlashMenu } from "./slash-menu";
+import {
+  createSlashCommandsExtension,
+  filterSlashCommands,
+  type SlashCommandId,
+  type SlashMenuRenderState,
+} from "./slash-commands";
+import {
+  toolbarHeading,
+  toolbarInline,
+  toolbarBlockPrefix,
+  toolbarCodeBlock,
+  toolbarHorizontalRule,
+} from "./toolbar-commands";
+import { getGateways } from "../../gateways";
+import { useAppStore } from "../../store/app-store";
 
 export { EDITOR_SNAPSHOT_DEBOUNCE_MS } from "./code-mirror-host";
 
@@ -378,6 +395,135 @@ interface EditorPaneProps {
   onEditorView?: (view: EditorView | null) => void;
 }
 
+const TABLE_SNIPPET = "| 列 1 | 列 2 | 列 3 |\n| --- | --- | --- |\n|  |  |  |";
+
+function executeSlashFormat(id: SlashCommandId, view: EditorView) {
+  switch (id) {
+    case "heading1":
+      toolbarHeading(view, 1);
+      break;
+    case "heading2":
+      toolbarHeading(view, 2);
+      break;
+    case "heading3":
+      toolbarHeading(view, 3);
+      break;
+    case "bold":
+      toolbarInline(view, "bold");
+      break;
+    case "italic":
+      toolbarInline(view, "italic");
+      break;
+    case "bulletList":
+      toolbarBlockPrefix(view, "bullet");
+      break;
+    case "numberedList":
+      toolbarBlockPrefix(view, "ordered");
+      break;
+    case "taskList":
+      toolbarBlockPrefix(view, "task");
+      break;
+    case "codeBlock":
+      toolbarCodeBlock(view);
+      break;
+    case "table": {
+      const doc = view.state.doc.toString();
+      const sel = view.state.selection.main;
+      const head = sel.head ?? sel.to;
+      const lineStart = doc.lastIndexOf("\n", head - 1) + 1;
+      let lineEnd = doc.indexOf("\n", head);
+      if (lineEnd < 0) lineEnd = doc.length;
+      const line = doc.slice(lineStart, lineEnd);
+      const needsBreak = line.trim().length > 0;
+      const insert = `${needsBreak ? "\n" : ""}${TABLE_SNIPPET}`;
+      view.dispatch({
+        changes: { from: lineEnd, to: lineEnd, insert },
+        selection: { anchor: lineEnd + (needsBreak ? 1 : 0) + 2 },
+        userEvent: "input.slash",
+      });
+      view.focus();
+      break;
+    }
+    case "quote":
+      toolbarBlockPrefix(view, "quote");
+      break;
+    case "divider":
+      toolbarHorizontalRule(view);
+      break;
+  }
+}
+
+async function executeSlashAi(id: SlashCommandId, view: EditorView): Promise<void> {
+  const aiSettings = useAppStore.getState().settings.ai;
+  if (!isAiConfigured(aiSettings)) {
+    useAppStore.setState({ error: "请先在设置中配置 AI" });
+    return;
+  }
+
+  const doc = view.state.doc.toString();
+  const cursor = view.state.selection.main.head;
+  const sel = view.state.selection.main;
+  const selectedText = view.state.sliceDoc(sel.from, sel.to);
+
+  let system = "";
+  let user = "";
+
+  switch (id) {
+    case "aiSummarize":
+      system = "你是一位专业的写作助手。请将用户提供的整篇笔记内容总结成简洁的要点，使用 Markdown 格式输出。直接输出结果，不要任何解释或前缀。";
+      user = doc;
+      break;
+    case "aiOutline":
+      system = "你是一位专业的写作助手。请根据用户提供的笔记内容生成结构化大纲，使用 Markdown 标题格式输出。直接输出大纲，不要任何解释或前缀。";
+      user = doc;
+      break;
+    case "aiContinue":
+      system = "你是一位专业的写作助手。请根据用户笔记中光标之前的内容继续往下写，保持风格和语境一致。直接输出续写内容，不要任何解释或前缀。";
+      user = doc.slice(0, cursor);
+      break;
+    case "aiTranslate":
+      system = "你是一位专业的翻译。请将用户提供的内容翻译成英文，保留 Markdown 格式。直接输出翻译结果，不要任何解释或前缀。";
+      user = selectedText.trim()
+        ? selectedText
+        : view.state.sliceDoc(
+            Math.max(0, doc.lastIndexOf("\n", cursor - 1)),
+            cursor,
+          );
+      break;
+  }
+
+  try {
+    const reply = await getGateways().ai.chatCompletion({
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: 0.7,
+    });
+    const result = reply.trim();
+    if (!result) return;
+
+    if (id === "aiSummarize") {
+      // Append summary to end of document.
+      view.dispatch({
+        changes: { from: doc.length, to: doc.length, insert: `\n\n## 摘要\n\n${result}\n` },
+        selection: EditorSelection.cursor(doc.length + result.length),
+        userEvent: "input.aiSlash",
+      });
+    } else {
+      // Insert at cursor position.
+      view.dispatch({
+        changes: { from: cursor, to: cursor, insert: result },
+        selection: EditorSelection.cursor(cursor + result.length),
+        userEvent: "input.aiSlash",
+      });
+    }
+    view.focus();
+  } catch {
+    useAppStore.setState({ error: "AI 调用失败，请检查设置" });
+  }
+}
+
 export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function EditorPane(
   {
     content,
@@ -398,6 +544,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
 ) {
   const { t, tc, locale } = useI18n();
   const hostRef = useRef<CodeMirrorHostHandle>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const [htmlDropActive, setHtmlDropActive] = useState(false);
   const dropDepthRef = useRef(0);
   const ignorePointerUntil = useRef(0);
@@ -406,25 +553,46 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
   const callbacksRef = useRef({ onPasteImages, onContextMenu, onOpenNote });
   callbacksRef.current = { onPasteImages, onContextMenu, onOpenNote };
   onScrollRef.current = onScroll;
-  const extensions = useMemo(
-    () =>
-      createEditorExtensions(
-        isDark,
-        settings.editor,
-        callbacksRef.current.onPasteImages
-          ? (files) => callbacksRef.current.onPasteImages?.(files) ?? Promise.resolve("")
-          : undefined,
-        (target) => callbacksRef.current.onContextMenu?.(target),
-        ignorePointerUntil,
-        {
-          catalog: wikiCatalog,
-          sourcePath,
-          onOpenNote: (path) => callbacksRef.current.onOpenNote?.(path),
-        },
-        locale,
-      ),
-    [isDark, locale, settings.editor, sourcePath, wikiCatalog],
-  );
+
+  const [cmView, setCmView] = useState<EditorView | null>(null);
+
+  // --- Slash menu state ---
+  const [slashMenu, setSlashMenu] = useState<SlashMenuRenderState | null>(null);
+
+  // Keep slash callbacks fresh without rebuilding the extension every render.
+  const slashCallbacksRef = useRef({
+    onStateChange: (state: SlashMenuRenderState | null) => setSlashMenu(state),
+    onExecuteFormat: (id: SlashCommandId, view: EditorView) => executeSlashFormat(id, view),
+    onExecuteAi: (id: SlashCommandId, view: EditorView) => executeSlashAi(id, view),
+  });
+
+  const extensions = useMemo(() => {
+    const base = createEditorExtensions(
+      isDark,
+      settings.editor,
+      callbacksRef.current.onPasteImages
+        ? (files) => callbacksRef.current.onPasteImages?.(files) ?? Promise.resolve("")
+        : undefined,
+      (target) => callbacksRef.current.onContextMenu?.(target),
+      ignorePointerUntil,
+      {
+        catalog: wikiCatalog,
+        sourcePath,
+        onOpenNote: (path) => callbacksRef.current.onOpenNote?.(path),
+      },
+      locale,
+    );
+
+    // Slash command extension.
+    const slashExt = createSlashCommandsExtension({
+      onStateChange: (state) => slashCallbacksRef.current.onStateChange(state),
+      onExecuteFormat: (id, view) => slashCallbacksRef.current.onExecuteFormat(id, view),
+      onExecuteAi: (id, view) => slashCallbacksRef.current.onExecuteAi(id, view),
+    });
+
+    return [...base, ...slashExt];
+  }, [isDark, locale, settings.editor, sourcePath, wikiCatalog]);
+
   const parsed = useMemo(() => parseNote(content, fileName), [content, fileName]);
   const stats = useMemo(() => noteStats(content), [content]);
 
@@ -525,8 +693,31 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
 
   const showDrop = highlightDrop || htmlDropActive;
 
+  const handleSlashSelect = useCallback((commandId: string) => {
+    const view = cmView;
+    if (!view || !slashMenu) return;
+    // Remove the "/" + filter text that triggered the menu.
+    const cursor = view.state.selection.main.head;
+    view.dispatch({
+      changes: { from: slashMenu.slashPos, to: cursor, insert: "" },
+      selection: { anchor: slashMenu.slashPos },
+      userEvent: "input.slash",
+    });
+    setSlashMenu(null);
+
+    const id = commandId as SlashCommandId;
+    const item = filterSlashCommands(slashMenu.filter).find((c) => c.id === id);
+    if (!item) return;
+    if (item.group === "formatting") {
+      executeSlashFormat(id, view);
+    } else {
+      void executeSlashAi(id, view);
+    }
+  }, [slashMenu]);
+
   return (
     <section
+      ref={sectionRef}
       aria-label={t("editor.markdownEditor")}
       className={cn(
         "editor-pane memoir-fade-in relative h-full min-h-0 min-w-0 overflow-hidden border-r border-border bg-canvas max-[760px]:min-h-[calc(100vh-138px)] max-[760px]:border-r-0",
@@ -557,6 +748,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           view.scrollDOM.addEventListener("scroll", handleScroll, { passive: true });
           detachScrollRef.current = () => view.scrollDOM.removeEventListener("scroll", handleScroll);
           handleScroll();
+          setCmView(view);
           onEditorView?.(view);
         }}
         ref={hostRef}
@@ -566,6 +758,13 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           {t("editor.dropAttachments")}
         </div>
       )}
+
+      <SlashMenu
+        view={cmView}
+        state={slashMenu}
+        onSelect={handleSlashSelect}
+      />
+
       <footer className="editor-statusbar absolute inset-x-0 bottom-0 flex h-7 items-center gap-3 border-t border-border bg-elevated/80 px-4 text-[9px] text-muted backdrop-blur-md">
         <span>{tc("editor.words", stats.words)}</span>
         <span>{tc("editor.chars", stats.chars)}</span>

@@ -1,4 +1,4 @@
-.editor-workspace-split {
+﻿.editor-workspace-split {
   grid-template-columns: var(--editor-split) var(--editor-split-rest);
 }
 
@@ -44,6 +44,21 @@
   }
 }
 
+.save-state-label {
+  transition: color 160ms ease;
+  color: var(--memoir-muted, #6b7280);
+  min-width: 3.5em;
+}
+.save-state-label[data-state="saved"] { color: #5ca878; }
+.save-state-label[data-state="dirty"] { color: var(--memoir-danger, #dc2626); }
+.save-state-label[data-state="saving"] { color: var(--memoir-accent, #2563eb); }
+.word-count-label {
+  color: var(--memoir-muted, #6b7280);
+  white-space: nowrap;
+  padding-left: 4px;
+  border-left: 1px solid color-mix(in srgb, var(--memoir-border) 60%, transparent);
+  margin-left: 2px;
+}
 .view-switcher {
   border: 1px solid color-mix(in srgb, var(--memoir-border) 88%, transparent);
   background: color-mix(in srgb, var(--memoir-panel) 74%, transparent);
@@ -156,7 +171,7 @@
   }
 }
 
-/* Table grid picker (8×8) portaled below the table toolbar button. */
+/* Table grid picker (8脳8) portaled below the table toolbar button. */
 .toolbar-grid-picker {
   position: fixed;
   z-index: 60;

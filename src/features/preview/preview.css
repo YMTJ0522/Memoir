@@ -734,6 +734,21 @@
   content: none;
 }
 
+/* Table scroll wrapper — matches AI chat table styling. */
+.memoir-preview .memoir-table-wrap {
+  margin: 1em 0;
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--memoir-border);
+}
+
+.memoir-preview .memoir-table-wrap table {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  min-width: 100%;
+}
+
 /* Tables: `border-collapse: separate` is required for the rounded corners —
    Tailwind Preflight's `collapse` makes border-radius a no-op. Only outer
    borders stay; rows keep a hairline divider instead of full grids. */
@@ -789,6 +804,13 @@
 .memoir-preview th,
 .memoir-preview td {
   border-color: var(--memoir-border);
+  padding: 8px 14px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.memoir-preview tbody tr:hover {
+  background: color-mix(in srgb, var(--memoir-accent) 4%, transparent);
 }
 
 /* Tailwind Preflight forces `img { display: block }`, and Typography

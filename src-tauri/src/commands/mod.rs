@@ -5,7 +5,7 @@ use crate::{
         LegacyStatePayload, LibraryPage, LibraryQuery, MigrationResult, NoteFile, NoteGraph,
         NoteVersion, NoteVersionMeta, RenamedNote, TrashEntry, WorkspaceIndexInfo, WorkspaceLayout,
     },
-    infrastructure::{ai_client, github_releases, link_preview},
+    infrastructure::{ai_client, github_releases, link_preview, web_search},
     services::{AppStateService, CloudSyncService, WorkspaceService},
     tray::ClosePolicy,
 };
@@ -551,6 +551,26 @@ pub async fn fetch_link_preview_html(url: String) -> Result<String, AppError> {
         })?
 }
 
+#[tauri::command]
+pub async fn web_search(query: String) -> Result<Vec<serde_json::Value>, AppError> {
+    let results = tauri::async_runtime::spawn_blocking(move || web_search::web_search(&query))
+        .await
+        .map_err(|error| {
+            AppError::new(crate::domain::ErrorCode::Io, "Web search interrupted.")
+                .with_details(error.to_string())
+        })??;
+    Ok(results
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "title": r.title,
+                "url": r.url,
+                "snippet": r.snippet,
+            })
+        })
+        .collect())
+}
+
 /// OpenAI-compatible chat completion, driven by the user's AI settings.
 #[tauri::command]
 pub async fn chat_completion(
@@ -653,4 +673,146 @@ pub async fn test_ai_connection(
         AppError::new(crate::domain::ErrorCode::Io, "AI connection test interrupted.")
             .with_details(error.to_string())
     })?
+}
+
+/// Exports an HTML document to a real vector PDF by driving the system's
+/// Edge or Chrome browser in headless mode. Unlike html2canvas (which embeds
+/// a rasterised screenshot), this produces selectable/copyable text and stays
+/// sharp at any zoom level.
+#[tauri::command]
+pub async fn export_pdf(
+    html: String,
+    output_path: String,
+) -> Result<(), AppError> {
+    use std::process::Command;
+
+    // Write the HTML to a temp file so the browser can load it via file://
+    // (data: URLs hit length limits on large documents).
+    let temp_dir = std::env::temp_dir();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let temp_name = format!("memoir_pdf_{}_{}.html", std::process::id(), timestamp);
+    let temp_file = temp_dir.join(&temp_name);
+    std::fs::write(&temp_file, &html).map_err(|error| {
+        AppError::new(crate::domain::ErrorCode::Io, "Failed to write temp HTML for PDF export.")
+            .with_details(error.to_string())
+    })?;
+
+    let file_url = format!(
+        "file:///{}",
+        temp_file.to_string_lossy().replace('\\', "/")
+    );
+
+    let browser_path = match find_pdf_browser() {
+        Some(path) => path,
+        None => {
+            let _ = std::fs::remove_file(&temp_file);
+            return Err(AppError::new(
+                crate::domain::ErrorCode::Io,
+                "Could not find Microsoft Edge or Google Chrome for PDF export.",
+            ));
+        }
+    };
+
+    let temp_file_clone = temp_file.clone();
+    let output_path_clone = output_path.clone();
+    let file_url_clone = file_url.clone();
+
+    // A separate user-data-dir prevents the headless instance from colliding
+    // with an already-running Edge/Chrome profile (which would otherwise make
+    // --headless silently no-op or open a normal window).
+    let user_data_dir = temp_dir.join(format!("memoir_pdf_profile_{}_{}", std::process::id(), timestamp));
+    let user_data_dir_clone = user_data_dir.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        // Drive Edge through PowerShell so argument quoting matches the
+        // manually-tested command line exactly (std::process::Command on
+        // Windows can mangle paths that contain backslashes).
+        let ps_command = format!(
+            "& '{}' --user-data-dir='{}' --headless=new --disable-gpu --no-sandbox --allow-file-access-from-files --disable-extensions --disable-features=Translate --no-pdf-header-footer --virtual-time-budget=10000 --print-to-pdf='{}' '{}'",
+            browser_path.display(),
+            user_data_dir_clone.display(),
+            output_path_clone,
+            file_url_clone
+        );
+
+        let output = Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(&ps_command)
+            .output();
+
+        let _ = std::fs::remove_file(&temp_file_clone);
+        let _ = std::fs::remove_dir_all(&user_data_dir_clone);
+
+        match output {
+            Ok(out) if out.status.success() => Ok(()),
+            Ok(out) => Err(AppError::new(
+                crate::domain::ErrorCode::Io,
+                "Browser PDF export failed.",
+            )
+            .with_details(String::from_utf8_lossy(&out.stderr).to_string())),
+            Err(error) => Err(AppError::new(
+                crate::domain::ErrorCode::Io,
+                "Failed to launch browser for PDF export.",
+            )
+            .with_details(error.to_string())),
+        }
+    })
+    .await
+    .map_err(|error| {
+        AppError::new(crate::domain::ErrorCode::Io, "PDF export task panicked.")
+            .with_details(error.to_string())
+    })?;
+
+    result
+}
+
+/// Write a debug log line to the desktop. Used by the frontend to diagnose
+/// export issues without requiring DevTools.
+#[tauri::command]
+pub async fn write_debug_log(message: String) -> Result<(), AppError> {
+    let desktop = std::env::var("USERPROFILE")
+        .map(|p| std::path::PathBuf::from(p).join("Desktop"))
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let log_path = desktop.join("memoir-debug.log");
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = format!("[{}] {}\n", timestamp, message);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(line.as_bytes())
+        })
+        .map_err(|error| {
+            AppError::new(crate::domain::ErrorCode::Io, "Failed to write debug log.")
+                .with_details(error.to_string())
+        })?;
+    Ok(())
+}
+
+/// Locate a Chromium-based browser that supports --headless --print-to-pdf.
+/// Edge is preferred because it ships with Windows.
+fn find_pdf_browser() -> Option<std::path::PathBuf> {
+    let candidates = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ];
+    for candidate in &candidates {
+        let path = std::path::Path::new(candidate);
+        if path.exists() {
+            return Some(path.to_path_buf());
+        }
+    }
+    None
 }

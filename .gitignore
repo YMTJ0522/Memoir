@@ -10,6 +10,9 @@ lerna-debug.log*
 # Agent temp artifacts
 .temp/
 
+# Rust build artifacts
+src-tauri/target
+
 node_modules
 dist
 dist-ssr

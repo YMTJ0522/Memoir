@@ -1,5 +1,7 @@
 import type { ExportFormat } from "../../gateways/contracts";
 import { EXPORT_FILTERS } from "../../gateways/contracts";
+import type { ExportPageMargin, ExportTemplate, ExportTemplateId } from "./export-options";
+import { EXPORT_TEMPLATES, PAGE_MARGIN_CSS } from "./export-options";
 
 /**
  * Shared helpers for the non-PDF export formats (Word / HTML / Markdown).
@@ -47,9 +49,47 @@ export function markdownDocument(title: string, content: string): string {
 /**
  * Self-contained HTML document (inkstone parity). `bodyHtml` should already
  * be rendered HTML with images inlined as data URLs where possible.
+ *
+ * The stylesheet is the single source of truth for both the HTML export and
+ * the PDF export (PDF renders this exact document inside a hidden iframe), so
+ * keep the two visually identical. Avoid CSS features html2canvas cannot
+ * paint reliably (e.g. color-mix, oklch, complex gradients).
  */
-export function htmlDocument(title: string, bodyHtml: string, language: string): string {
+export function htmlDocument(
+  title: string,
+  bodyHtml: string,
+  language: string,
+  templateId: ExportTemplateId = "minimal",
+  pageMargin: ExportPageMargin = "normal",
+): string {
   const safeTitle = escapeHtml(title);
+  const template: ExportTemplate = EXPORT_TEMPLATES[templateId] ?? EXPORT_TEMPLATES.minimal;
+  const marginCss = PAGE_MARGIN_CSS[pageMargin] ?? PAGE_MARGIN_CSS.normal;
+  // Drop leading h1s that duplicate the document title: notes usually open
+  // with `# Title` (sometimes twice — a cover line then a body line), and the
+  // template below already emits one. The frontmatter properties card (if
+  // any) may sit before the heading, so locate the first h1 anywhere in the
+  // body rather than assuming it is the first child; then remove it together
+  // with any immediately-following h1 that repeats the same text.
+  let cleanBody = bodyHtml;
+  if (title) {
+    const parsed = new DOMParser().parseFromString(bodyHtml, "text/html");
+    // Drop the frontmatter properties card — it's editor metadata, not content.
+    parsed.querySelectorAll("details.memoir-frontmatter-properties").forEach((node) => node.remove());
+    // Drop code block header chrome (copy buttons, titles).
+    parsed.querySelectorAll(".memoir-code-block-head").forEach((node) => node.remove());
+    parsed.querySelectorAll(".memoir-code-copy").forEach((node) => node.remove());
+    // Drop leading h1s that duplicate the document title.
+    let heading = parsed.body.querySelector("h1");
+    let removed = false;
+    while (heading && (heading.textContent ?? "").trim() === title.trim()) {
+      const next = heading.nextElementSibling;
+      heading.remove();
+      removed = true;
+      heading = next && next.tagName === "H1" ? (next as HTMLHeadingElement) : null;
+    }
+    if (removed || bodyHtml !== parsed.body.innerHTML) cleanBody = parsed.body.innerHTML;
+  }
   return `<!DOCTYPE html>
 <html lang="${escapeAttr(language)}">
 <head>
@@ -58,61 +98,256 @@ export function htmlDocument(title: string, bodyHtml: string, language: string):
 <title>${safeTitle}</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
 <style>
-:root { color-scheme: light; }
-* { box-sizing: border-box; }
-@page { size: A4; margin: 2.54cm; }
-body { margin: 0 auto; max-width: 46rem; padding: 2.5rem 1.75rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: 16px; line-height: 1.75; color: #1f2328; background: #fff; }
-@media print {
-  body { padding: 0; max-width: none; font-size: 12pt; line-height: 1.6; }
-  h1, h2, h3 { page-break-after: avoid; }
-  pre, table, .callout, blockquote, img { page-break-inside: avoid; }
-  a { color: #1a5276; }
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --text: var(--export-text);
+  --muted: var(--export-muted);
+  --border: var(--export-border);
+  --border-strong: var(--export-border-strong);
+  --link: var(--export-text);
+  --code-bg: var(--export-code-bg);
+  --code-border: var(--export-border);
+  --code-text: var(--export-code-text);
+  --table-head-bg: var(--export-table-head-bg);
+  --table-head-text: var(--export-table-head-text);
+  --table-stripe: var(--export-table-stripe);
+  ${Object.entries(template.cssVars)
+    .map(([key, value]) => `${key}: ${value};`)
+    .join("\n  ")}
 }
-h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 1.4em 0 0.6em; color: #1a5276; }
-h1 { font-size: 1.75em; }
-h2 { font-size: 1.4em; padding-bottom: 0.25em; border-bottom: 1px solid #e5e7eb; }
-h3 { font-size: 1.18em; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+@page { size: A4; margin: ${marginCss}; }
+/* Pagination hints: keep headings with following content, avoid orphaned
+   headings at page bottom, and keep tables/callouts/images intact when
+   they fit on a page. The JS paginator in render-note-pdf.tsx enforces
+   these as well; the CSS rules also help direct browser "Print to PDF". */
+h1, h2, h3, h4, h5, h6 { page-break-after: avoid; break-after: avoid; }
+h1 + p, h2 + p, h3 + p, h4 + p, h5 + p, h6 + p { page-break-before: avoid; break-before: avoid; }
+table, pre, .memoir-code-block, aside[data-callout], blockquote, details, figure, img {
+  page-break-inside: avoid; break-inside: avoid;
+}
+tr, li { page-break-inside: avoid; break-inside: avoid; }
+p { orphans: 3; widows: 3; }
+body {
+  margin: 0 auto;
+  max-width: 50rem;
+  padding: 3rem 2.25rem;
+  font-family: var(--export-font);
+  font-size: var(--export-body-size);
+  line-height: var(--export-line-height);
+  color: var(--text);
+  background: var(--bg);
+  text-rendering: optimizeLegibility;
+}
+@media print {
+  body { padding: 0; max-width: none; font-size: 12pt; line-height: 1.7; }
+  h1, h2, h3, h4 { page-break-after: avoid; break-after: avoid; }
+  pre, table, aside[data-callout], blockquote, img, .memoir-code-block { page-break-inside: avoid; break-inside: avoid; }
+  a { color: #000000; }
+}
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.35;
+  margin: 1.6em 0 0.7em;
+  color: var(--export-heading);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+/* Document title: centered, with a double rule underneath. */
+body > h1:first-of-type {
+  text-align: center;
+  font-size: 2em;
+  margin: 0 0 1.2em;
+  padding-bottom: 0.55em;
+  border-bottom: 3px double var(--export-heading);
+}
+h1 { font-size: 1.8em; }
+h2 {
+  font-size: 1.45em;
+}
+h3 { font-size: 1.2em; }
 h4 { font-size: 1.05em; }
-p { margin: 0.7em 0; text-align: justify; }
-a { color: #2563eb; text-decoration: none; }
+p { margin: 0.75em 0; text-align: justify; }
+a { color: var(--link); text-decoration: none; border-bottom: 1px solid #9ca3af; }
 a:hover { text-decoration: underline; }
-a.wikilink { color: #4b5563; text-decoration: none; border-bottom: 1px dashed #9ca3af; }
+a.wikilink { color: var(--muted); text-decoration: none; border-bottom: 1px dashed var(--border-strong); }
 strong { font-weight: 600; }
-del { color: #6b7280; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 0.88em; background: #f3f4f6; border-radius: 4px; padding: 0.15em 0.35em; }
-pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 1em 1.1em; overflow-x: auto; line-height: 1.6; margin: 0.9em 0; }
-pre code { background: transparent; padding: 0; font-size: 0.85em; color: inherit; }
-blockquote { margin: 0.9em 0; padding: 0.2em 1.1em; border-left: 3px solid #d1d5db; color: #4b5563; }
-img { max-width: 100%; height: auto; border-radius: 6px; }
-hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.6em 0; }
-table { border-collapse: collapse; width: 100%; margin: 0.9em 0; font-size: 0.95em; }
-th, td { border: 1px solid #d1d5db; padding: 0.4em 0.7em; text-align: left; vertical-align: top; }
-th { background: #f3f4f6; font-weight: 600; }
-tr:nth-child(even) td { background: #f9fafb; }
-ul, ol { padding-left: 1.6em; }
-li { margin: 0.25em 0; }
+del { color: var(--muted); }
+mark { background: #fef3c7; border-radius: 3px; padding: 0 0.15em; }
+code {
+  font-family: var(--export-mono);
+  font-size: 0.88em;
+  background: var(--export-code-bg);
+  border-radius: 4px;
+  padding: 0.15em 0.35em;
+}
+pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 10px;
+  padding: 1em 1.15em;
+  overflow-x: auto;
+  line-height: 1.65;
+  margin: 1em 0;
+  font-size: 0.875em;
+}
+pre code { background: transparent; padding: 0; color: inherit; }
+/* Enhanced code fences (toolbar 增强代码块) render a header bar + inner pre. */
+div.memoir-code-block {
+  margin: 1.1em 0;
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+div.memoir-code-block pre.memoir-code-pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+div.memoir-code-block pre.memoir-code-pre > code { display: block; background: transparent; }
+.memoir-code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #ececec;
+  color: #4b5563;
+  font-size: 12px;
+  border-bottom: 1px solid var(--code-border);
+}
+.memoir-code-title { font-weight: 600; color: #1f2937; }
+.memoir-code-lang { text-transform: uppercase; letter-spacing: 0.05em; }
+/* The copy button has no behaviour in a static export — hide it. */
+.memoir-code-copy { display: none; }
+/* Code highlighting palette (GitHub light), kept in sync with preview.css. */
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta .hljs-keyword { color: #cf222e; }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-meta-string { color: #0a3069; }
+.hljs-number, .hljs-literal, .hljs-symbol { color: #0550ae; }
+.hljs-title, .hljs-title.function_, .hljs-section { color: #8250df; }
+.hljs-type, .hljs-class .hljs-title, .hljs-title.class_ { color: #953800; }
+.hljs-attr, .hljs-attribute, .hljs-name, .hljs-selector-class, .hljs-selector-id,
+.hljs-selector-attr, .hljs-property { color: #116329; }
+.hljs-comment, .hljs-quote, .hljs-doctag { color: #6e7781; font-style: italic; }
+.hljs-variable, .hljs-template-variable, .hljs-params, .hljs-bullet,
+.hljs-operator, .hljs-punctuation { color: #1f2328; }
+.hljs-deletion { color: #82071e; }
+blockquote {
+  margin: 1.1em 0;
+  padding: 0.7em 1.2em;
+  border-left: 4px solid var(--export-blockquote-border);
+  background: var(--export-blockquote-bg);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
+}
+img { max-width: 100%; height: auto; border-radius: 8px; }
+hr {
+  border: none;
+  height: 1px;
+  background: var(--border-strong);
+  margin: 1.8em 0;
+}
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  margin: 1.1em 0;
+  font-size: 0.95em;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  overflow: hidden;
+}
+th, td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.55em 0.85em;
+  text-align: left;
+  vertical-align: top;
+}
+thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-text);
+  font-weight: 600;
+  border-bottom: none;
+}
+tr:last-child td { border-bottom: none; }
+tbody tr:nth-child(even) { background: var(--table-stripe); }
+ul, ol { padding-left: 1.7em; }
+li { margin: 0.3em 0; }
+li > p { margin: 0.2em 0; }
 li.task-list-item { list-style: none; }
-input.task-list-item-checkbox { margin-right: 0.45em; transform: translateY(1px); }
-details { margin: 0.9em 0; padding: 0.7em 1em; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; }
+li.task-list-item input[type="checkbox"] { margin-right: 0.45em; transform: translateY(1px); }
+details {
+  margin: 1.1em 0;
+  padding: 0.75em 1.05em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--export-callout-bg);
+}
 summary { cursor: pointer; font-weight: 600; }
-details[open] summary { margin-bottom: 0.4em; }
-.callout { border-left: 4px solid #6b7280; border-radius: 6px; padding: 0.65em 1em; margin: 0.9em 0; background: #f9fafb; }
-.callout[data-callout="warning"] { border-color: #d97706; background: #fffbeb; }
-.callout[data-callout="danger"], .callout[data-callout="error"] { border-color: #dc2626; background: #fef2f2; }
-.callout[data-callout="success"], .callout[data-callout="tip"] { border-color: #16a34a; background: #f0fdf4; }
-.callout[data-callout="info"], .callout[data-callout="note"] { border-color: #2563eb; background: #eff6ff; }
-.callout-title { font-weight: 600; margin-bottom: 0.25em; }
-.callout-content > :first-child { margin-top: 0; }
-.callout-content > :last-child { margin-bottom: 0; }
+details[open] summary { margin-bottom: 0.45em; }
+/* Frontmatter properties card (title / tags / date). */
+details.memoir-frontmatter-properties { background: var(--export-callout-bg); border-color: var(--border-strong); }
+details.memoir-frontmatter-properties > summary { color: var(--export-heading); font-size: 0.95em; }
+.memoir-frontmatter-row { display: flex; gap: 0.6em; }
+.memoir-frontmatter-row dt { min-width: 5em; color: var(--muted); }
+.memoir-frontmatter-chip { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.05em 0.6em; margin: 0.1em 0.2em 0.1em 0; font-size: 0.9em; }
+/* Callouts render as <aside data-callout="…"> in the preview pipeline.
+   Black-and-white: a neutral gray accent + light gray tint for every type. */
+aside[data-callout] {
+  margin: 1.1em 0;
+  padding: 0.85em 1.1em;
+  border-radius: 10px;
+  border-left: 4px solid var(--export-callout-border);
+  background: var(--export-callout-bg);
+}
+aside[data-callout] > strong { display: block; margin-bottom: 0.3em; font-size: 0.95em; }
+aside[data-callout] > div > :first-child { margin-top: 0; }
+aside[data-callout] > div > :last-child { margin-bottom: 0; }
+aside[data-callout="warning"] { border-color: var(--border-strong); background: #f9fafb; }
+aside[data-callout="danger"], aside[data-callout="error"] { border-color: var(--border-strong); background: #f9fafb; }
+aside[data-callout="success"], aside[data-callout="tip"] { border-color: var(--border-strong); background: #f9fafb; }
+aside[data-callout="info"], aside[data-callout="note"] { border-color: var(--border-strong); background: #f9fafb; }
 .footnote-ref { font-size: 0.8em; }
-.footnotes { font-size: 0.9em; color: #4b5563; border-top: 1px solid #e5e7eb; margin-top: 1.5em; padding-top: 0.75em; }
-kbd { background: #f3f4f6; border: 1px solid #d1d5db; border-bottom-width: 2px; border-radius: 4px; padding: 0.08em 0.35em; font-family: ui-monospace, monospace; font-size: 0.85em; }
+.footnotes { font-size: 0.9em; color: var(--muted); border-top: 1px solid var(--border); margin-top: 1.5em; padding-top: 0.75em; }
+kbd {
+  background: var(--export-code-bg);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.08em 0.35em;
+  font-family: var(--export-mono);
+  font-size: 0.85em;
+}
 sub, sup { line-height: 0; }
-</style>
+.inline-tag {
+  color: var(--text);
+  background: var(--export-code-bg);
+  border: 1px solid var(--border);
+  padding: 0.06em 0.4em;
+  border-radius: 999px;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+a.block-reference {
+  color: var(--link);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--border-strong);
+}
+.memoir-wiki-embed {
+  display: block;
+  margin: 1.2em 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--export-callout-bg);
+  padding: 0.2em 1em;
+}</style>
 </head>
 <body>
 ${safeTitle ? `<h1>${safeTitle}</h1>` : ""}
-${bodyHtml}
+${cleanBody}
 </body>
 </html>`;
 }
@@ -169,12 +404,12 @@ export function sanitizeBodyHtmlForWord(bodyHtml: string): string {
     const element = node as HTMLElement;
     const type = element.getAttribute("data-callout") ?? "note";
     const palette: Record<string, { border: string; background: string }> = {
-      note: { border: "#2563eb", background: "#eff6ff" },
-      tip: { border: "#16a34a", background: "#f0fdf4" },
-      success: { border: "#16a34a", background: "#f0fdf4" },
-      warning: { border: "#d97706", background: "#fffbeb" },
-      danger: { border: "#dc2626", background: "#fef2f2" },
-      error: { border: "#dc2626", background: "#fef2f2" },
+      note: { border: "#6b7280", background: "#f9fafb" },
+      tip: { border: "#6b7280", background: "#f9fafb" },
+      success: { border: "#6b7280", background: "#f9fafb" },
+      warning: { border: "#6b7280", background: "#f9fafb" },
+      danger: { border: "#6b7280", background: "#f9fafb" },
+      error: { border: "#6b7280", background: "#f9fafb" },
     };
     const colors = palette[type] ?? palette.note!;
     element.style.borderLeft = `4pt solid ${colors.border}`;

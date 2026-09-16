@@ -66,7 +66,7 @@ describe("NoteGraphView", () => {
     useAppStore.setState({
       workspaceRoot: "/workspace",
       activePath: "one.md",
-      libraryPanelMode: "graph",
+      libraryPanelMode: "visualization",
       notes: [note("one.md", "One"), note("two.md", "Two")],
     });
     const view = render(<NoteGraphView />);

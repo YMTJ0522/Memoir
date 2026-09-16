@@ -20,20 +20,39 @@ import { renderMermaidDiagram } from "../preview/mermaid-runtime";
 import { extractMermaidBlocks, mermaidBlockLabel } from "./flowchart-utils";
 import { exportFlowchart } from "./export-flowchart";
 
-const MIN_SCALE = 0.25;
-const MAX_SCALE = 3;
-const FIT_PADDING = 64;
+const MIN_SCALE = 0.2;
+const MAX_SCALE = 2;
+const FIT_PADDING = 96;
 
 type Viewport = { x: number; y: number; scale: number };
 
 /** Fit the rendered diagram into the stage (with padding), centered. */
 function fitViewport(stage: HTMLElement): Viewport {
-  const diagram = stage.querySelector<SVGSVGElement>(".flowchart-diagram");
+  const diagram = stage.querySelector<SVGSVGElement>(".flowchart-diagram svg");
   if (!diagram) return { x: 0, y: 0, scale: 1 };
-  const box = diagram.getBoundingClientRect();
   const area = stage.getBoundingClientRect();
-  const contentWidth = box.width || 1;
-  const contentHeight = box.height || 1;
+  // Use the SVG's intrinsic content size (viewBox or bbox), not its
+  // getBoundingClientRect() — mermaid sets width="100%" so the rect
+  // equals the container width and breaks centering.
+  let contentWidth = 0;
+  let contentHeight = 0;
+  const viewBox = diagram.viewBox.baseVal;
+  if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+    contentWidth = viewBox.width;
+    contentHeight = viewBox.height;
+  } else {
+    try {
+      const bbox = diagram.getBBox();
+      contentWidth = bbox.width;
+      contentHeight = bbox.height;
+    } catch {
+      const rect = diagram.getBoundingClientRect();
+      contentWidth = rect.width;
+      contentHeight = rect.height;
+    }
+  }
+  contentWidth = contentWidth || 1;
+  contentHeight = contentHeight || 1;
   const scale = Math.min(
     (area.width - FIT_PADDING) / contentWidth,
     (area.height - FIT_PADDING) / contentHeight,
@@ -51,8 +70,6 @@ export default function FlowchartView({ className }: { className?: string }) {
   const activePath = useAppStore((state) => state.activePath);
   const content = useAppStore((state) => state.content);
   const notes = useAppStore((state) => state.notes);
-  const libraryPanelMode = useAppStore((state) => state.libraryPanelMode);
-  const setLibraryPanelMode = useAppStore((state) => state.setLibraryPanelMode);
   const { t } = useI18n();
 
   const activeNote = notes.find((note) => note.relativePath === activePath) || null;
@@ -60,16 +77,6 @@ export default function FlowchartView({ className }: { className?: string }) {
     () => (activePath ? extractMermaidBlocks(content) : []),
     [activePath, content],
   );
-
-  // The sidebar hides the flowchart entry for notes without mermaid blocks.
-  // If the user is already inside the flowchart view and switches to a note
-  // without diagrams, fall back to the notes list instead of showing an
-  // orphaned empty diagram canvas.
-  useEffect(() => {
-    if (libraryPanelMode === "flowchart" && activePath && blocks.length === 0) {
-      setLibraryPanelMode("notes");
-    }
-  }, [libraryPanelMode, activePath, blocks.length, setLibraryPanelMode]);
 
   const [selected, setSelected] = useState(0);
   const [svg, setSvg] = useState("");
@@ -222,7 +229,7 @@ export default function FlowchartView({ className }: { className?: string }) {
   }, []);
 
   const doExport = (format: "png" | "svg") => {
-    const host = stageRef.current?.querySelector<SVGSVGElement>(".flowchart-diagram");
+    const host = stageRef.current?.querySelector<SVGSVGElement>(".flowchart-diagram svg");
     if (!host) return;
     void exportFlowchart(host, format);
   };

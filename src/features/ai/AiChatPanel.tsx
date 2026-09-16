@@ -26,6 +26,7 @@ import { isAiConfigured } from "../../domain/settings";
 import { isTauriRuntime } from "../../platform/runtime";
 import { handleWindowDragMouseDown } from "../window/window-drag";
 import { useAppStore } from "../../store/app-store";
+import { getGateways } from "../../gateways";
 import type { AiChatMessage, AiSession } from "../../store/types";
 import { renderMarkdownLite } from "./markdown-lite";
 import { runAgentLoop, type AgentRunStep } from "./agent-runner";
@@ -33,7 +34,23 @@ import { Button, IconButton, Select, Toggle, Tooltip, cn } from "../../component
 
 const MAX_NOTE_CONTEXT_CHARS = 30_000;
 const SYSTEM_ROLE = `你是用户的 AI 写作助手。请始终使用简体中文回复，语气自然专业。
-不要自称"豆包""DeepSeek""Kimi"或其他任何模型/厂商名称，直接以助手身份回答问题即可。`;
+你的思考过程（reasoning）也必须使用简体中文，不要用英文思考。
+不要自称"豆包""DeepSeek""Kimi"或其他任何模型/厂商名称，直接以助手身份回答问题即可。
+你拥有以下工具能力：
+1. search_notes：搜索本地笔记
+2. read_note：读取笔记全文
+3. note_outline：提取笔记大纲
+4. list_tags：列出所有标签
+5. create_note：创建新笔记
+6. web_search：联网搜索互联网信息
+7. update_note：更新已有笔记内容（替换/追加/插入）
+8. fetch_url：抓取网页正文内容
+9. add_tag：给笔记添加标签
+10. remove_tag：移除笔记标签
+11. list_folders：列出所有文件夹
+当用户询问实时信息、新闻、技术文档、外部资料，或本地笔记中没有相关内容时，请主动使用 web_search 工具进行联网搜索，搜索后可用 fetch_url 读取具体网页内容。
+当用户要求修改、润色、补充某篇笔记时，用 update_note 直接更新原笔记内容。
+当用户要求整理、分类笔记时，可以用 add_tag 给笔记打标签，用 list_folders 了解目录结构后用 create_note 创建到合适的文件夹。`;
 
 const NEW_SESSION_VALUE = "__new__";
 
@@ -102,6 +119,12 @@ export default function AiChatPanel({ className }: { className?: string }) {
   const [expandedReasoningIds, setExpandedReasoningIds] = useState<Set<string>>(new Set());
   const [expandedStepsIds, setExpandedStepsIds] = useState<Set<string>>(new Set());
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // @ mention note feature
+  const [mentionedNotePaths, setMentionedNotePaths] = useState<string[]>([]);
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState("");
+  const [mentionStartIndex, setMentionStartIndex] = useState(-1);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   /** sessionId of the currently streaming reply; guards stale event callbacks. */
   const streamingSessionRef = useRef<string | null>(null);
@@ -156,6 +179,14 @@ export default function AiChatPanel({ className }: { className?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configured, aiSessions.length]);
 
+  // Auto-resize textarea to fit content (max 160px)
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
+  }, [draft]);
+
   /** Append a streamed piece to a specific assistant message in the store. */
   const appendStreamPiece = (
     sessionId: string,
@@ -172,6 +203,90 @@ export default function AiChatPanel({ className }: { className?: string }) {
         item.id === messageId ? { ...item, [key]: `${item[key] ?? ""}${piece}` } : item,
       ),
     });
+  };
+
+  // ── @ mention note helpers ────────────────────────────────────────────────
+
+  const mentionedNotes = useMemo(
+    () => mentionedNotePaths.map((path) => notes.find((n) => n.relativePath === path)).filter(Boolean) as typeof notes,
+    [mentionedNotePaths, notes],
+  );
+
+  const filteredMentionNotes = useMemo(() => {
+    if (!mentionSearch.trim()) return notes.slice(0, 8);
+    const q = mentionSearch.toLowerCase();
+    return notes
+      .filter((n) => (n.title || n.fileName).toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [notes, mentionSearch]);
+
+  const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setDraft(value);
+    const cursor = e.target.selectionStart ?? value.length;
+    // Detect @ trigger: @ at start or after whitespace, not already part of a mention
+    const beforeCursor = value.slice(0, cursor);
+    const atMatch = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/);
+    if (atMatch) {
+      setMentionStartIndex(cursor - atMatch[1].length - 1);
+      setMentionSearch(atMatch[1]);
+      setShowMentionPicker(true);
+    } else {
+      setShowMentionPicker(false);
+      setMentionStartIndex(-1);
+    }
+  };
+
+  const insertMention = (notePath: string) => {
+    const note = notes.find((n) => n.relativePath === notePath);
+    if (!note || !textareaRef.current) return;
+    const ta = textareaRef.current;
+    const cursor = ta.selectionStart ?? draft.length;
+    const before = draft.slice(0, mentionStartIndex);
+    const after = draft.slice(cursor);
+    const mentionText = `@${note.title || note.fileName} `;
+    const newDraft = before + mentionText + after;
+    setDraft(newDraft);
+    if (!mentionedNotePaths.includes(notePath)) {
+      setMentionedNotePaths((prev) => [...prev, notePath]);
+    }
+    setShowMentionPicker(false);
+    setMentionSearch("");
+    setMentionStartIndex(-1);
+    // Restore cursor after the inserted mention
+    requestAnimationFrame(() => {
+      const newPos = before.length + mentionText.length;
+      ta.focus();
+      ta.setSelectionRange(newPos, newPos);
+    });
+  };
+
+  const removeMentionedNote = (notePath: string) => {
+    setMentionedNotePaths((prev) => prev.filter((p) => p !== notePath));
+  };
+
+  const buildMultiNoteContext = async (): Promise<string | null> => {
+    const parts: string[] = [];
+    // Current note context (if enabled)
+    if (useNoteContext && activeNote) {
+      parts.push(buildNoteContext(activeNote.title || activeNote.fileName, content));
+    }
+    // @mentioned notes
+    for (const notePath of mentionedNotePaths) {
+      if (useNoteContext && activeNote && notePath === activePath) continue; // skip duplicate
+      try {
+        const state = useAppStore.getState();
+        if (!state.workspaceRoot) continue;
+        const noteContent = await getGateways().workspace.readNote(state.workspaceRoot, notePath);
+        const note = notes.find((n) => n.relativePath === notePath);
+        if (note) {
+          parts.push(buildNoteContext(note.title || note.fileName, noteContent));
+        }
+      } catch {
+        // skip unreadable note
+      }
+    }
+    return parts.length > 0 ? parts.join("\n\n---\n\n") : null;
   };
 
   const send = async (text: string) => {
@@ -212,10 +327,9 @@ export default function AiChatPanel({ className }: { className?: string }) {
     const messageId = loadingMessage.id;
     const executedSteps: AgentRunStep[] = [];
     try {
-      const noteContext =
-        useNoteContext && activeNote
-          ? buildNoteContext(activeNote.title || activeNote.fileName, content)
-          : null;
+      const noteContext = await buildMultiNoteContext();
+      // Clear mentions after sending
+      setMentionedNotePaths([]);
       const historyMessages = history.map((message) => ({
         role: message.role,
         content: message.content,
@@ -395,6 +509,12 @@ export default function AiChatPanel({ className }: { className?: string }) {
   const handleDeleteSession = (session: AiSession) => {
     if (window.confirm(t("ai.sessionConfirm"))) {
       deleteAiSession(session.id);
+      setDraft("");
+      setExpandedReasoningIds(new Set());
+      setExpandedStepsIds(new Set());
+      setCopiedId(null);
+      setInsertedId(null);
+      setInsertAsNoteId(null);
     }
   };
 
@@ -518,6 +638,7 @@ export default function AiChatPanel({ className }: { className?: string }) {
             </div>
 
             <div
+              key={activeAiSessionId ?? "empty"}
               className="ai-chat-messages min-h-0 flex-1 overflow-y-auto px-3 py-4"
               ref={listRef}
             >
@@ -700,7 +821,7 @@ export default function AiChatPanel({ className }: { className?: string }) {
                               {message.id === lastDoneAssistantId && (
                                 <button
                                   aria-label={t("ai.regenerate")}
-                                  className="ai-action-button"
+                                  className="ai-action-button ai-action-button--icon"
                                   disabled={isSending}
                                   onClick={() => void regenerateLast()}
                                   title={t("ai.regenerate")}
@@ -713,9 +834,9 @@ export default function AiChatPanel({ className }: { className?: string }) {
                                 aria-label={
                                   copiedId === message.id ? t("ai.copied") : t("ai.copy")
                                 }
-                                className="ai-action-button"
+                                className="ai-action-button ai-action-button--icon"
                                 onClick={() => void copyMessage(message)}
-                                title={t("ai.copy")}
+                                title={copiedId === message.id ? t("ai.copied") : t("ai.copy")}
                                 type="button"
                               >
                                 {copiedId === message.id ? (
@@ -731,9 +852,9 @@ export default function AiChatPanel({ className }: { className?: string }) {
                                       ? t("ai.inserted")
                                       : t("ai.insert")
                                   }
-                                  className="ai-action-button"
+                                  className="ai-action-button ai-action-button--icon"
                                   onClick={() => insertIntoNote(message)}
-                                  title={t("ai.insert")}
+                                  title={insertedId === message.id ? t("ai.inserted") : t("ai.insert")}
                                   type="button"
                                 >
                                   {insertedId === message.id ? (
@@ -749,9 +870,9 @@ export default function AiChatPanel({ className }: { className?: string }) {
                                     ? t("ai.insertAsNoteDone")
                                     : t("ai.insertAsNote")
                                 }
-                                className="ai-action-button"
+                                className="ai-action-button ai-action-button--icon"
                                 onClick={() => void insertAsNewNote(message)}
-                                title={t("ai.insertAsNote")}
+                                title={insertAsNoteId === message.id ? t("ai.insertAsNoteDone") : t("ai.insertAsNote")}
                                 type="button"
                               >
                                 {insertAsNoteId === message.id ? (
@@ -771,39 +892,137 @@ export default function AiChatPanel({ className }: { className?: string }) {
             </div>
 
             <div className="ai-composer shrink-0 border-t border-border p-3">
-              <textarea
-                aria-label={t("ai.inputPlaceholder")}
-                className="ai-composer-input"
-                disabled={isSending}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    void send(draft);
-                  }
-                }}
-                placeholder={t("ai.inputPlaceholder")}
-                rows={3}
-                value={draft}
-              />
+              {/* Mentioned notes chips */}
+              {mentionedNotes.length > 0 && (
+                <div className="ai-mentioned-row mb-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-muted">引用：</span>
+                  {mentionedNotes.map((note) => (
+                    <span key={note.relativePath} className="ai-mentioned-chip">
+                      <FileText className="h-3 w-3" />
+                      <span className="max-w-[120px] truncate">{note.title || note.fileName}</span>
+                      <button
+                        className="ai-mentioned-remove"
+                        onClick={() => removeMentionedNote(note.relativePath)}
+                        type="button"
+                        aria-label="移除引用"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Quick command chips (always visible, only first 4) */}
+              <div className="ai-quick-row mb-2 flex items-center gap-1.5 overflow-x-auto">
+                {QUICK_COMMANDS.slice(0, 4).map((cmd) => (
+                  <button
+                    key={cmd.key}
+                    className="ai-quick-chip shrink-0"
+                    disabled={isSending}
+                    onClick={() => applyQuickCommand(cmd.prompt)}
+                    type="button"
+                  >
+                    <QuickIcon kind={cmd.icon} />
+                    <span>{t(cmd.key)}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Textarea with mention picker */}
+              <div className="relative">
+                <textarea
+                  ref={textareaRef}
+                  aria-label={t("ai.inputPlaceholder")}
+                  className="ai-composer-input"
+                  disabled={isSending}
+                  onChange={handleTextareaInput}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && showMentionPicker) {
+                      setShowMentionPicker(false);
+                      return;
+                    }
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing &&
+                      !showMentionPicker
+                    ) {
+                      event.preventDefault();
+                      void send(draft);
+                    }
+                  }}
+                  onBlur={() => {
+                    // Delay close so click on picker registers
+                    setTimeout(() => setShowMentionPicker(false), 150);
+                  }}
+                  placeholder={t("ai.inputPlaceholder")}
+                  rows={1}
+                  value={draft}
+                  style={{ minHeight: "44px", maxHeight: "160px", height: "auto" }}
+                />
+                {/* Mention picker dropdown */}
+                {showMentionPicker && (
+                  <div className="ai-mention-picker">
+                    <div className="ai-mention-header">选择要引用的笔记</div>
+                    <div className="ai-mention-list">
+                      {filteredMentionNotes.length === 0 ? (
+                        <div className="ai-mention-empty">没有匹配的笔记</div>
+                      ) : (
+                        filteredMentionNotes.map((note) => (
+                          <button
+                            key={note.relativePath}
+                            className="ai-mention-item"
+                            onClick={() => insertMention(note.relativePath)}
+                            type="button"
+                          >
+                            <FileText className="h-3.5 w-3.5 shrink-0 text-muted" />
+                            <span className="min-w-0 truncate">{note.title || note.fileName}</span>
+                            {mentionedNotePaths.includes(note.relativePath) && (
+                              <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="mt-2 flex items-center justify-between gap-2">
                 <span className="ai-model-name min-w-0 truncate" title={settings.ai.model}>
                   {settings.ai.model}
                 </span>
-                <Button
-                  aria-label={t("ai.send")}
-                  className="h-8 w-8 shrink-0"
-                  disabled={!draft.trim() || isSending}
-                  onClick={() => void send(draft)}
-                  size="icon"
-                  variant="primary"
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </Button>
+                {isSending ? (
+                  <Button
+                    aria-label="停止生成"
+                    className="h-8 shrink-0 gap-1.5"
+                    onClick={() => {
+                      streamingSessionRef.current = null;
+                      setIsSending(false);
+                      if (timerRef.current) {
+                        clearInterval(timerRef.current);
+                        timerRef.current = null;
+                      }
+                    }}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm bg-danger" />
+                    停止
+                  </Button>
+                ) : (
+                  <Button
+                    aria-label={t("ai.send")}
+                    className="h-8 w-8 shrink-0"
+                    disabled={!draft.trim() || isSending}
+                    onClick={() => void send(draft)}
+                    size="icon"
+                    variant="primary"
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </>

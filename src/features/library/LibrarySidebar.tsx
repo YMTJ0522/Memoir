@@ -6,7 +6,6 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  GitBranch,
   Inbox,
   Moon,
   Network,
@@ -20,7 +19,6 @@ import {
   Sun,
   Tag as TagIcon,
   Trash2,
-  Waypoints,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { IconButton, cn } from "../../components/ui";
@@ -38,6 +36,7 @@ import { dateLocale } from "../../i18n";
 import { WorkspaceSwitcher } from "../workspace/WorkspaceSwitcher";
 import { FolderAppearanceDialog } from "./FolderAppearanceDialog";
 import { FolderContextMenu, type FolderMenuTarget } from "./FolderContextMenu";
+import { exportNotesBatch } from "../export/export-note";
 import { isRootFolder, normalizeTag } from "./note-utils";
 
 function NavButton({
@@ -47,6 +46,7 @@ function NavButton({
   collapsed,
   icon,
   onClick,
+  className,
 }: {
   label: string;
   count?: number;
@@ -54,6 +54,7 @@ function NavButton({
   collapsed: boolean;
   icon: ReactNode;
   onClick: () => void;
+  className?: string;
 }) {
   return (
     <button
@@ -64,6 +65,7 @@ function NavButton({
         collapsed &&
           "min-[761px]:grid-cols-1 min-[761px]:justify-items-center min-[761px]:gap-0 min-[761px]:px-0",
         active && "is-active",
+        className,
       )}
       onClick={onClick}
       title={collapsed ? label : undefined}
@@ -254,8 +256,6 @@ export function LibrarySidebar({
   const setSettings = useAppStore((state) => state.setSettings);
   const settings = useAppStore((state) => state.settings);
   const openSettings = useAppStore((state) => state.openSettings);
-  const activePath = useAppStore((state) => state.activePath);
-  const content = useAppStore((state) => state.content);
   const { t, locale } = useI18n();
   const compareLocale = dateLocale(locale);
   const folderTree = useMemo(
@@ -263,13 +263,6 @@ export function LibrarySidebar({
     [compareLocale, libraryStats.folders],
   );
 
-  /** Only show the flowchart nav button when the active note contains at
-   *  least one ```mermaid code block. This avoids cluttering the sidebar
-   *  with an entry that leads to an empty view for notes without diagrams. */
-  const hasMermaid = useMemo(() => {
-    if (!activePath) return false;
-    return /\n[ \t]*(```|~~~)[ \t]*mermaid\b/i.test(content);
-  }, [activePath, content]);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const tags = [...libraryStats.tags].sort((left, right) =>
     left.tag.localeCompare(right.tag, compareLocale),
@@ -394,28 +387,13 @@ export function LibrarySidebar({
             onClick={() => setNavFilter("uncategorized")}
           />
           <NavButton
-            active={libraryPanelMode === "graph"}
+            active={libraryPanelMode === "visualization"}
+            className="viz-nav-item"
             collapsed={collapsed}
             icon={<Network strokeWidth={1.8} />}
-            label={t("nav.graph")}
-            onClick={() => setLibraryPanelMode("graph")}
+            label={t("nav.visualization")}
+            onClick={() => setLibraryPanelMode("visualization")}
           />
-          <NavButton
-            active={libraryPanelMode === "mindmap"}
-            collapsed={collapsed}
-            icon={<Waypoints strokeWidth={1.8} />}
-            label={t("nav.mindmap")}
-            onClick={() => setLibraryPanelMode("mindmap")}
-          />
-          {hasMermaid && (
-            <NavButton
-              active={libraryPanelMode === "flowchart"}
-              collapsed={collapsed}
-              icon={<GitBranch strokeWidth={1.8} />}
-              label={t("nav.flowchart")}
-              onClick={() => setLibraryPanelMode("flowchart")}
-            />
-          )}
           <NavButton
             active={libraryPanelMode === "attachments"}
             collapsed={collapsed}
@@ -451,6 +429,7 @@ export function LibrarySidebar({
           />
           <NavButton
             active={libraryPanelMode === "ai"}
+            className="ai-nav-item"
             collapsed={collapsed}
             icon={<Sparkles strokeWidth={1.8} />}
             label={t("nav.aiWrite")}
@@ -566,6 +545,17 @@ export function LibrarySidebar({
       <FolderContextMenu
         onClose={() => setMenuTarget(null)}
         onCustomize={(folder) => setAppearanceFolder(folder)}
+        onExport={(folder) => {
+          const all = useAppStore.getState().notes;
+          const paths = all
+            .filter((n) => {
+              const slash = n.relativePath.lastIndexOf("/");
+              const noteFolder = slash > 0 ? n.relativePath.slice(0, slash) : "";
+              return noteFolder === folder;
+            })
+            .map((n) => n.relativePath);
+          if (paths.length > 0) void exportNotesBatch(paths, "html");
+        }}
         onOpen={(folder) => setScopedFilter({ type: "folder", value: folder })}
         target={menuTarget}
       />

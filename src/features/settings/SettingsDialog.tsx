@@ -513,6 +513,18 @@ export default function SettingsDialog({
                 <span>{t("settings.github")}</span>
                 <ExternalLink aria-hidden strokeWidth={1.8} />
               </a>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  onClose();
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent("memoir:show-onboarding"));
+                  }, 300);
+                }}
+              >
+                查看新手引导
+              </Button>
               <UpdateCheckControls />
             </div>
           )}

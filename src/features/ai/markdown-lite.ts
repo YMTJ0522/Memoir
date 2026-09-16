@@ -51,12 +51,41 @@ function safeLink(href: string, label: string): string {
   )}</a>`;
 }
 
+/** Split a markdown table row into cells, trimming whitespace and pipes. */
+function splitTableRow(line: string): string[] {
+  let trimmed = line.trim();
+  // Remove leading/trailing pipe
+  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+/** Check if a line is a table separator row like |---|---|. */
+function isTableSeparator(line: string): boolean {
+  const cells = splitTableRow(line);
+  if (cells.length === 0) return false;
+  return cells.every((cell) => /^:?-{2,}:?$/.test(cell));
+}
+
+/** Parse column alignment from a separator row like |:---|:---:|---:|. */
+type TableAlign = "left" | "center" | "right";
+function parseTableAlign(line: string): TableAlign[] {
+  return splitTableRow(line).map((cell) => {
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    return "left";
+  });
+}
+
 type Block =
   | { kind: "heading"; level: number; text: string }
   | { kind: "paragraph"; text: string }
   | { kind: "code"; language: string; text: string }
   | { kind: "quote"; text: string }
   | { kind: "list"; ordered: boolean; items: string[]; tasks: Array<boolean | null> }
+  | { kind: "table"; header: string[]; rows: string[][]; align: TableAlign[] }
   | { kind: "rule" };
 
 function parseBlocks(markdown: string): Block[] {
@@ -141,6 +170,22 @@ function parseBlocks(markdown: string): Block[] {
       continue;
     }
 
+    // table: header row | separator | data rows
+    if (line.includes("|") && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+      const header = splitTableRow(line);
+      const align = parseTableAlign(lines[index + 1]);
+      const rows: string[][] = [];
+      index += 2; // skip header and separator
+      while (index < lines.length) {
+        const current = lines[index];
+        if (current.trim() === "" || !current.includes("|")) break;
+        rows.push(splitTableRow(current));
+        index += 1;
+      }
+      blocks.push({ kind: "table", header, rows, align });
+      continue;
+    }
+
     // paragraph (consume until blank line or block start)
     const paragraphLines: string[] = [];
     while (index < lines.length) {
@@ -152,7 +197,8 @@ function parseBlocks(markdown: string): Block[] {
         /^\s*>/.test(current) ||
         /^\s*[-*+]\s+/.test(current) ||
         /^\s*\d+[.)]\s+/.test(current) ||
-        /^\s*([-*_])(\s*\1){2,}\s*$/.test(current)
+        /^\s*([-*_])(\s*\1){2,}\s*$/.test(current) ||
+        (current.includes("|") && index + 1 < lines.length && isTableSeparator(lines[index + 1]))
       ) {
         break;
       }
@@ -190,6 +236,29 @@ export function renderMarkdownLite(markdown: string): string {
       case "rule":
         parts.push("<hr />");
         break;
+      case "table": {
+        const alignStyle = (colIndex: number) => {
+          const align = block.align[colIndex];
+          if (align === "center") return "text-align:center";
+          if (align === "right") return "text-align:right";
+          return "";
+        };
+        const headerCells = block.header
+          .map((cell, i) => `<th style="${alignStyle(i)}">${renderInline(cell)}</th>`)
+          .join("");
+        const bodyRows = block.rows
+          .map(
+            (row) =>
+              `<tr>${row
+                .map((cell, i) => `<td style="${alignStyle(i)}">${renderInline(cell)}</td>`)
+                .join("")}</tr>`,
+          )
+          .join("");
+        parts.push(
+          `<div class="ai-table-wrap"><table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></div>`,
+        );
+        break;
+      }
       case "list": {
         const hasTasks = block.tasks.some((task) => task !== null);
         if (hasTasks) {

@@ -91,11 +91,12 @@ export function NoteOutline({
     event.preventDefault();
   };
 
-  const activate = (id: string) => {
-    setActiveId(id);
+  const activate = (heading: HeadingItem) => {
+    setActiveId(heading.id);
     ignoreObserverRef.current = true;
-    scrollHeadingInPreview(id, {
+    scrollHeadingInPreview(heading.id, {
       behavior: prefersReducedMotion() ? "auto" : "smooth",
+      line: heading.line,
     });
     if (ignoreTimerRef.current !== null) window.clearTimeout(ignoreTimerRef.current);
     ignoreTimerRef.current = window.setTimeout(() => {
@@ -157,7 +158,7 @@ export function NoteOutline({
                 aria-current={current ? "location" : undefined}
                 className={cn("outline-item-label", current && "is-active")}
                 data-depth={node.level}
-                onClick={() => activate(node.heading.id)}
+                onClick={() => activate(node.heading)}
                 onMouseDown={preventFocusScroll}
                 title={node.heading.text}
                 type="button"

@@ -181,7 +181,7 @@ describe("export-document templates", () => {
     // The warning callout gets an inline left border + background so Word
     // keeps the visual accent (attribute selectors do not work in Word).
     expect(doc).toContain("border-left");
-    expect(doc).toContain("rgb(217, 119, 6)"); // #d97706 normalized by the DOM
+    expect(doc).toContain("rgb(107, 114, 128)"); // #6b7280 normalized by the DOM
     expect(doc).toContain("background");
     // Foldable blocks are flattened: the summary becomes a bold paragraph
     // and the details wrapper disappears.

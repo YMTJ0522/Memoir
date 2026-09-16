@@ -1,7 +1,8 @@
-/* Flowchart view: the rendered mermaid svg fills the stage and is centered. */
+/* Flowchart view: the rendered mermaid svg keeps its intrinsic size so
+   the canvas transform can scale and center it correctly. */
 .flowchart-stage .flowchart-diagram svg {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
   display: block;
   outline: none;
   max-width: none;

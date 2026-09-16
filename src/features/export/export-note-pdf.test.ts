@@ -6,13 +6,13 @@ import { exportNotePdf } from "./export-note-pdf";
 import { renderNotePdf } from "./render-note-pdf";
 
 vi.mock("./render-note-pdf", () => ({
-  renderNotePdf: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+  renderNotePdf: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("exportNotePdf", () => {
   beforeEach(() => {
     vi.mocked(renderNotePdf).mockReset();
-    vi.mocked(renderNotePdf).mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(renderNotePdf).mockResolvedValue(undefined);
     const gateways = createMockGateways();
     gateways.workspace.files.set("two.mdx", "---\ntitle: two\n---\n\n# two\n");
     gateways.workspace.nextExportPath = "/tmp/two.pdf";
@@ -58,6 +58,7 @@ describe("exportNotePdf", () => {
         content: "# two\n\nunsaved",
         relativePath: "two.mdx",
         root: "/workspace",
+        outputPath: "/tmp/two.pdf",
       }),
     );
     expect(useAppStore.getState().status).toBe("已导出 PDF");

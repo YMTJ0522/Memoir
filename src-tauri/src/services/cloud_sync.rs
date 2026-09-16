@@ -71,7 +71,7 @@ impl ProgressReporter {
     }
 }
 
-const TRANSFER_PARALLELISM: usize = 4;
+const TRANSFER_PARALLELISM: usize = 8;
 
 #[derive(Debug, Clone)]
 pub struct CloudSyncService {

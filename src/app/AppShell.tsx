@@ -17,7 +17,10 @@ import type { EditorHandle } from "../features/editor/EditorPane";
 import { LayoutResizeHandle } from "../features/layout/LayoutResizeHandle";
 import { LibrarySidebar } from "../features/library/LibrarySidebar";
 import { NoteList } from "../features/library/NoteList";
+import { CommandPalette } from "../features/palette/CommandPalette";
 import { AppUpdateNotice } from "../features/update/AppUpdateNotice";
+import { OnboardingTour } from "../features/onboarding/OnboardingTour";
+import "../features/onboarding/onboarding.css";
 import { WindowFrame } from "../features/window/WindowChrome";
 import {
   useWorkspaceDialogs,
@@ -35,9 +38,7 @@ import { useAppStore } from "../store/app-store";
 
 const SettingsDialog = lazy(() => import("../features/settings/SettingsDialog"));
 const EditorWorkspace = lazy(() => import("../features/editor/EditorWorkspace"));
-const NoteGraphView = lazy(() => import("../features/graph/NoteGraphView"));
-const MindMapView = lazy(() => import("../features/mindmap/MindMapView"));
-const FlowchartView = lazy(() => import("../features/flowchart/FlowchartView"));
+const VisualizationView = lazy(() => import("../features/visualization/VisualizationView"));
 
 function EmptyState() {
   const openWorkspace = useAppStore((state) => state.openWorkspace);
@@ -90,6 +91,7 @@ function WorkspaceLayout({
   const editorRef = useRef<EditorHandle>(null);
   const shellRef = useRef<HTMLElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [paletteMode, setPaletteMode] = useState<null | "command" | "quickOpen">(null);
   const panelClass = (panel: "navigation" | "library" | "editor") =>
     mobilePanel === panel
       ? "max-[760px]:fixed max-[760px]:bottom-0 max-[760px]:left-0 max-[760px]:top-12 max-[760px]:z-20 max-[760px]:flex max-[760px]:w-[min(86vw,320px)] max-[760px]:shadow-2xl"
@@ -145,6 +147,30 @@ function WorkspaceLayout({
     prevLibraryPanelMode.current = libraryPanelMode;
   }, [libraryPanelMode, layout.libraryWidth, setLayout]);
 
+  // Global keyboard shortcuts for command palette (Ctrl/Cmd+P) and
+  // quick open (Ctrl/Cmd+O). Skip when focus is already in a text field.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const target = event.target as HTMLElement | null;
+      const isTextField =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable;
+      if (isTextField) return;
+      const key = event.key.toLowerCase();
+      if (key === "p") {
+        event.preventDefault();
+        setPaletteMode((prev) => (prev === "command" ? null : "command"));
+      } else if (key === "o") {
+        event.preventDefault();
+        setPaletteMode((prev) => (prev === "quickOpen" ? null : "quickOpen"));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <WindowFrame controlsHidden={isSidebarCollapsed}>
       <main
@@ -199,12 +225,8 @@ function WorkspaceLayout({
             </section>
           }
         >
-          {libraryPanelMode === "graph" ? (
-            <NoteGraphView />
-          ) : libraryPanelMode === "mindmap" ? (
-            <MindMapView />
-          ) : libraryPanelMode === "flowchart" ? (
-            <FlowchartView />
+          {libraryPanelMode === "visualization" ? (
+            <VisualizationView />
           ) : (
             <EditorWorkspace
               className="max-[760px]:grid max-[760px]:min-h-[calc(100vh-48px)]"
@@ -276,6 +298,12 @@ function WorkspaceLayout({
             settings={settings}
           />
         </Suspense>
+
+        <CommandPalette
+          mode={paletteMode ?? "command"}
+          onClose={() => setPaletteMode(null)}
+          open={paletteMode !== null}
+        />
       </main>
     </WindowFrame>
   );
@@ -425,6 +453,7 @@ export default function AppShell() {
         </WorkspaceDialogsProvider>
       )}
       {initialized ? <AppUpdateNotice /> : null}
+      {initialized && workspaceRoot ? <OnboardingTour /> : null}
     </I18nProvider>
   );
 }
